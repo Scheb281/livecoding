@@ -1,16 +1,48 @@
-# React + Vite
+# interview. — технические интервью
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+React + Monaco + ASP.NET 10 + SignalR + EF Core/Npgsql.
 
-Currently, two official plugins are available:
+Роли: кандидат, интервьюер, тимлид, администратор. Реализованы банк задач,
+комнаты, приглашения, код в реальном времени, чат, подсказки, оценки,
+снимки решений, отчёты, пользователи, квоты и аудит.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Первый запуск с PostgreSQL
 
-## React Compiler
+Пошагово: [backend/README.md](backend/README.md).
+Создай пустую БД, укажи ConnectionStrings:Database через user-secrets,
+выполни `dotnet run -- --migrate`, создай первого администратора через
+`--bootstrap-admin`, затем запусти API на localhost:5000.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Фронтенд из корня проекта:
 
-## Expanding the Oxlint configuration
+```powershell
+npm install
+npm run dev
+```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+Vite проксирует /api и /hubs на ASPNET_URL, по умолчанию http://localhost:5000.
+Работай в обычном API-режиме. Сотрудников создаёт администратор и передаёт им
+ссылки настройки пароля. Кандидат может зарегистрироваться по email или
+войти гостем по одноразовому приглашению.
+
+Отдельный деморежим на странице входа сохраняет данные только в памяти вкладки.
+Он не заменяет БД при ошибках и не выполняет код.
+
+## Проверки
+
+```powershell
+npm run lint
+npm test
+npm run build
+dotnet test backend/Interview.sln
+```
+
+Для восстановления локального dotnet-ef: перейди в backend и выполни
+`dotnet tool restore`. Типы таблиц, миграция и SQL лежат в backend.
+Контракт фронтенда: [docs/API_AND_DATABASE.md](docs/API_AND_DATABASE.md).
+
+Сам изолированный контейнерный runner в этот репозиторий не включён.
+API содержит очередь, квоты и адаптер собственного runner; до его настройки
+кнопка тестов получает понятный ответ 503. API пользовательский код не запускает.
+
+Старый исходный фронтенд сохранён рядом в visual-for-api-backup-2026-10-31.

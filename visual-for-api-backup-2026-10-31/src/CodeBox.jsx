@@ -1,7 +1,11 @@
 import { useRef, useState } from "react";
 import Editor from "@monaco-editor/react";
 
-function CodeBox() {
+function CodeBox({
+  sharedDocument = null,
+  readOnly = false,
+  onDocumentChange,
+}) {
   const languagesConfig = {
     Python: {
       id: "python",
@@ -110,7 +114,23 @@ public class Main {
   };
 
   const [isOpen, setIsOpen] = useState(false);
-  const [selectedLang, setSelectedLang] = useState("Python");
+  const [localLanguage, setSelectedLang] = useState("Python");
+  const selectedLang = sharedDocument?.language ?? localLanguage;
+
+  function changeLanguage(language) {
+    if (readOnly) return;
+    setSelectedLang(language);
+    setIsOpen(false);
+    if (sharedDocument) {
+      const code = languagesConfig[language].starterCode;
+      onDocumentChange?.({ language, code });
+    }
+  }
+
+  function changeCode(value, event) {
+    if (readOnly || event.isFlush) return;
+    onDocumentChange?.({ language: selectedLang, code: value ?? "" });
+  }
 
   const [output, setOutput] = useState(
     "Здесь будет результат выполнения кода...",
@@ -219,6 +239,7 @@ public class Main {
         <div className="dropdown" style={{ position: "relative" }}>
           <button
             onClick={toggleDropdown}
+            disabled={readOnly}
             style={{
               padding: "10px 15px",
               cursor: "pointer",
@@ -250,8 +271,7 @@ public class Main {
                 <li
                   key={language}
                   onClick={() => {
-                    setSelectedLang(language);
-                    setIsOpen(false);
+                    changeLanguage(language);
                   }}
                   style={{
                     padding: "6px 20px",
@@ -299,8 +319,11 @@ public class Main {
           language={languagesConfig[selectedLang].id}
           path={languagesConfig[selectedLang].filename}
           defaultValue={languagesConfig[selectedLang].starterCode}
+          value={sharedDocument?.code}
+          onChange={changeCode}
           onMount={handleEditorDidMount}
           options={{
+            readOnly,
             fontSize: 14,
             minimap: { enabled: false },
             automaticLayout: true,

@@ -9,6 +9,11 @@ function Authform( { type } )
                 <form action="/login" method="POST">
                     <input type="text" placeholder="Логин" />
                     <input type="password" placeholder="Пароль" />
+                    <label>
+                        <input type="radio" name="userType" value="admin" /> Админ
+                        <input type="radio" name="userType" value="teamlead" /> Тимлид
+                        <input type="radio" name="userType" value="interviewer" /> Интервьюер
+                    </label>
                     <button type="submit">Войти</button>
                 </form>
             </div>
@@ -20,7 +25,7 @@ function Authform( { type } )
                     <label>
                         <input type="radio" name="userType" value="admin" /> Админ
                         <input type="radio" name="userType" value="teamlead" /> Тимлид
-                        <input type="radio" name="userType" value="developer" /> Разработчик
+                        <input type="radio" name="userType" value="interviewer" /> Интервьюер
                     </label>
                     <input type="email" placeholder="Email" />
                     <input type="password" placeholder="Пароль" />

@@ -99,6 +99,49 @@
   align-items: center;
 }
 
+.task-form {
+  display: grid;
+  gap: 10px;
+  font-size: 14px;
+}
+
+.task-form textarea {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 10px;
+  resize: vertical;
+  border: 1px solid #555;
+  border-radius: 6px;
+  background: #151519;
+  color: inherit;
+  font: inherit;
+}
+
+.task-form button,
+.live-coding__header button {
+  margin-top: 8px;
+  padding: 10px 16px;
+  border: 1px solid #526b55;
+  border-radius: 6px;
+  background: #274c30;
+  color: #fff;
+  cursor: pointer;
+}
+
+.task-form button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.live-coding__questions .task-list-title {
+  margin-top: 28px;
+}
+
+.question-list details {
+  margin-top: 8px;
+  color: #b5c9b8;
+}
+
 @media (max-width: 800px) {
   .live-coding {
     padding: 16px;
