@@ -1,5 +1,6 @@
 import { formatDate } from "../api/format.jsx";
 import { useState } from "react";
+import { finalScore } from "../api/scoring.js";
 import { useAction } from "../hooks/useResource.jsx";
 import { ActionState, Empty } from "./Common.jsx";
 
@@ -170,7 +171,8 @@ export function EvaluationPanel({ api, room, refreshRoom }) {
       <form className="stack" onSubmit={save}>
         {room.rubric.criteria.map((criterion) => (
           <label key={criterion.id}>
-            {criterion.label} · от 0 до {criterion.maxScore}
+            {criterion.label} · от 0 до {criterion.maxScore} · вес{" "}
+            {criterion.weight ?? 1}
             <input
               required
               type="number"
@@ -196,6 +198,9 @@ export function EvaluationPanel({ api, room, refreshRoom }) {
             onChange={(event) => setComment(event.target.value)}
           />
         </label>
+        <p>
+          Итог с весами: {finalScore(room.rubric.criteria, scores) ?? "—"} / 100
+        </p>
         <button disabled={action.busy}>Сохранить оценку</button>
         <ActionState action={action} />
       </form>

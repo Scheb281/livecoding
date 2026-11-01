@@ -41,8 +41,26 @@ dotnet test backend/Interview.sln
 `dotnet tool restore`. Типы таблиц, миграция и SQL лежат в backend.
 Контракт фронтенда: [docs/API_AND_DATABASE.md](docs/API_AND_DATABASE.md).
 
-Сам изолированный контейнерный runner в этот репозиторий не включён.
+Изолированный Docker runner находится в backend/Interview.Runner.
 API содержит очередь, квоты и адаптер собственного runner; до его настройки
 кнопка тестов получает понятный ответ 503. API пользовательский код не запускает.
 
-Старый исходный фронтенд сохранён рядом в visual-for-api-backup-2026-10-31.
+Резервная копия перед этим обновлением: visual-for-api-backup-2026-11-01.
+
+## Дополнения по заданию
+
+Добавлены Docker-исполнитель на семи языках, таймер комнаты, курсоры и передача
+управления редактором, оценки с весами, журнал с воспроизведением и шифрование
+содержимого в БД.
+
+- [Запуск Docker runner](backend/Interview.Runner/README.md)
+- [Защита и обновление существующей БД](docs/SECURITY_AND_EXECUTION.md)
+- [UML и ER-диаграмма](docs/UML.md)
+- [Соответствие заданию и проверки](docs/REQUIREMENTS_CHECK.md)
+
+Перед запуском обновлённого API примени миграции по backend/README.md.
+Существующие открытые данные шифрует команда --encrypt-existing-data.
+
+
+
+- [Как работают все классы и методы API](docs/API_CLASSES_AND_METHODS.md)

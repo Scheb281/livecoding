@@ -13,12 +13,42 @@ export default function CodeWorkspace({ api, room, task, refreshRoom }) {
   const [runError, setRunError] = useState("");
   const mounted = useRef(true);
   const abortRef = useRef(null);
-  const canEdit = room.canEditCode && shared.ready;
+  const editorRef = useRef(null);
+  const cursorListener = useRef(null);
+  const decorations = useRef(null);
+  const [editorReady, setEditorReady] = useState(false);
+  const canEdit = room.canEditCode && shared.ready && shared.canWrite;
+  const canSubmit = room.canSubmit ?? (!room.canInterview && room.canEditCode);
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editorReady || !editor?.getModel()) return;
+    const model = editor.getModel();
+    decorations.current?.set(
+      Object.values(shared.peers).map((peer) => {
+        const line = Math.min(peer.lineNumber, model.getLineCount());
+        const column = Math.min(peer.column, model.getLineMaxColumn(line));
+        return {
+          range: {
+            startLineNumber: line,
+            endLineNumber: line,
+            startColumn: column,
+            endColumn: column,
+          },
+          options: {
+            className: "peer-cursor",
+            afterContentClassName: "peer-cursor-mark",
+          },
+        };
+      }),
+    );
+  }, [shared.peers, editorReady]);
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
       abortRef.current?.abort();
+      cursorListener.current?.dispose();
+      decorations.current?.clear();
     };
   }, []);
 
@@ -91,7 +121,7 @@ export default function CodeWorkspace({ api, room, task, refreshRoom }) {
       <div className="editor-toolbar">
         <div>
           <span className="eyebrow">
-            {room.canEditCode ? "Ваше решение" : "Код кандидата · просмотр"}
+            {room.canInterview ? "Совместный редактор" : "Ваше решение"}
           </span>
           <p className="muted" role="status">
             {shared.status}
@@ -112,6 +142,46 @@ export default function CodeWorkspace({ api, room, task, refreshRoom }) {
           </select>
         </label>
       </div>
+      <div className="editor-actions">
+        <span className="muted">
+          {shared.canWrite
+            ? "Сейчас пишете вы"
+            : `Пишет: ${shared.editorOwner || "кандидат"}`}
+        </span>
+        {room.canEditCode &&
+          (shared.canWrite ? (
+            <button
+              className="quiet"
+              disabled={!shared.ready}
+              onClick={shared.releaseControl}
+            >
+              Передать управление
+            </button>
+          ) : (
+            <button
+              className="secondary"
+              disabled={!shared.ready}
+              onClick={shared.takeControl}
+            >
+              Взять управление
+            </button>
+          ))}
+        <button
+          className="quiet"
+          disabled={!shared.ready}
+          onClick={() => action.run(shared.reload, "Код обновлён")}
+        >
+          Заменить локальный код сохранённым
+        </button>
+        <span className="muted">
+          {Object.values(shared.peers)
+            .map(
+              (peer) =>
+                `${peer.displayName}: ${peer.lineNumber}:${peer.column}`,
+            )
+            .join(" · ")}
+        </span>
+      </div>
       {canEdit && (
         <div className="editor-actions">
           <button
@@ -131,6 +201,14 @@ export default function CodeWorkspace({ api, room, task, refreshRoom }) {
         </div>
       )}
       <Editor
+        onMount={(editor) => {
+          editorRef.current = editor;
+          decorations.current = editor.createDecorationsCollection();
+          cursorListener.current = editor.onDidChangeCursorPosition(
+            ({ position }) => shared.cursor(position),
+          );
+          setEditorReady(true);
+        }}
         height="430px"
         theme="vs-dark"
         language={
@@ -170,17 +248,19 @@ export default function CodeWorkspace({ api, room, task, refreshRoom }) {
           <>
             <button
               className="quiet"
-              disabled={!shared.ready || action.busy}
+              disabled={!canEdit || action.busy}
               onClick={() => action.run(shared.flush, "Код сохранён")}
             >
               Сохранить код
             </button>
-            <button
-              disabled={!shared.ready || action.busy}
-              onClick={submitSolution}
-            >
-              Отправить решение →
-            </button>
+            {canSubmit && (
+              <button
+                disabled={!shared.ready || action.busy}
+                onClick={submitSolution}
+              >
+                Отправить решение →
+              </button>
+            )}
           </>
         )}
       </div>
@@ -205,6 +285,8 @@ export default function CodeWorkspace({ api, room, task, refreshRoom }) {
               <p key={test.id ?? index}>
                 Тест {index + 1}: {test.passed ? "✓ пройден" : "✕ не пройден"}
                 {test.message ? ` · ${test.message}` : ""}
+                {test.durationMs != null ? ` · ${test.durationMs} мс` : ""}
+                {test.memoryKb > 0 ? ` · ${test.memoryKb} КиБ` : ""}
               </p>
             ))}
             {["queued", "running"].includes(run.status) && !running && (

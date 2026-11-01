@@ -4,10 +4,12 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Interview.Api.Infrastructure;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace Interview.Api.Data;
 
-public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbContext<AppUser, IdentityRole, string>(options)
+public class AppDbContext(DbContextOptions<AppDbContext> options, FieldCipher cipher) : IdentityDbContext<AppUser, IdentityRole, string>(options)
 {
     public DbSet<BankTask> Tasks => Set<BankTask>();
     public DbSet<TaskTest> TaskTests => Set<TaskTest>();
@@ -29,6 +31,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
     public DbSet<CodeRunTest> RunTests => Set<CodeRunTest>();
     public DbSet<DailyRunUsage> DailyRunUsages => Set<DailyRunUsage>();
     public DbSet<AuditEvent> Audit => Set<AuditEvent>();
+    public DbSet<SessionEvent> SessionEvents => Set<SessionEvent>();
 
     protected override void OnModelCreating(ModelBuilder model)
     {
@@ -76,7 +79,11 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
         model.Entity<RubricCriterion>().Property(x => x.Label).HasMaxLength(100);
         model.Entity<RubricCriterion>().HasIndex(x => new { x.RubricId, x.Key }).IsUnique();
         model.Entity<RubricCriterion>().ToTable(t => t.HasCheckConstraint("CK_Rubric_MaxScore", "\"MaxScore\" BETWEEN 1 AND 100"));
-        model.Entity<Room>().ToTable("Interviews", t => t.HasCheckConstraint("CK_Room_Status", "\"Status\" IN ('draft','active','completed')"));
+        model.Entity<Room>().ToTable("Interviews", t =>
+        {
+            t.HasCheckConstraint("CK_Room_Status", "\"Status\" IN ('draft','waiting','active','completed')");
+            t.HasCheckConstraint("CK_Room_Duration", "\"DurationMinutes\" BETWEEN 5 AND 240");
+        });
         model.Entity<Room>().Property(x => x.Title).HasMaxLength(200);
         model.Entity<Room>().Property(x => x.CandidateName).HasMaxLength(100);
         model.Entity<Room>().Property(x => x.Status).HasMaxLength(20);
@@ -150,6 +157,41 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
         model.Entity<AuditEvent>().Property(x => x.EntityId).HasMaxLength(100);
         model.Entity<AuditEvent>().HasOne<AppUser>().WithMany().HasForeignKey(x => x.ActorId);
         model.Entity<AuditEvent>().HasIndex(x => x.CreatedAt);
+
+        model.Entity<RubricCriterion>().Property(x => x.Weight).HasPrecision(8, 2).HasDefaultValue(1m);
+        if (Database.ProviderName?.Contains("Sqlite") == true) model.Entity<RubricCriterion>().Property(x => x.Weight).HasConversion<double>().HasColumnType("REAL");
+        model.Entity<RubricCriterion>().ToTable(t => t.HasCheckConstraint("CK_Criterion_Weight", "\"Weight\" > 0 AND \"Weight\" <= 100"));
+        model.Entity<Room>().Property(x => x.DurationMinutes).HasDefaultValue(90);
+        model.Entity<SessionEvent>().HasIndex(x => new { x.RoomId, x.Sequence }).IsUnique();
+        model.Entity<SessionEvent>().HasOne<Room>().WithMany().HasForeignKey(x => x.RoomId);
+        model.Entity<SessionEvent>().HasOne<AppUser>().WithMany().HasForeignKey(x => x.ActorId);
+        model.Entity<SessionEvent>().Property(x => x.Type).HasMaxLength(50);
+        model.Entity<SessionEvent>().Property(x => x.Visibility).HasMaxLength(20);
+
+        // Шифруются содержимое кода, скрытые тесты, переписка, заметки и журнал.
+        // Индексируемые email/роли и числовые версии остаются обычными полями.
+        var protectedText = new ValueConverter<string, string>(value => cipher.Encrypt(value), value => cipher.Decrypt(value));
+        var protectedFields = new Dictionary<Type, string[]>
+        {
+            [typeof(BankTask)] = [nameof(BankTask.StarterCode)],
+            [typeof(TaskTest)] = [nameof(TaskTest.Input), nameof(TaskTest.Expected)],
+            [typeof(Room)] = [nameof(Room.RubricSnapshot)],
+            [typeof(RoomTask)] = [nameof(RoomTask.TaskSnapshot)],
+            [typeof(CodeDocument)] = [nameof(CodeDocument.Code)],
+            [typeof(CodeEvent)] = [nameof(CodeEvent.Code)],
+            [typeof(Submission)] = [nameof(Submission.Code)],
+            [typeof(CodeRun)] = [nameof(CodeRun.Code), nameof(CodeRun.Output)],
+            [typeof(ChatMessage)] = [nameof(ChatMessage.Text)],
+            [typeof(Hint)] = [nameof(Hint.Text)],
+            [typeof(Evaluation)] = [nameof(Evaluation.Comment)],
+            [typeof(SessionEvent)] = [nameof(SessionEvent.Payload)]
+        };
+        foreach (var (entityType, fields) in protectedFields)
+            foreach (var field in fields)
+            {
+                var property = model.Entity(entityType).Property(field).HasConversion(protectedText).HasColumnType("text");
+                property.Metadata.SetMaxLength(null);
+            }
 
         // Не удаляем историю вместе с пользователем: учётную запись деактивируют.
         foreach (var foreignKey in model.Model.GetEntityTypes().SelectMany(x => x.GetForeignKeys()))

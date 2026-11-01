@@ -8,6 +8,7 @@ import TaskBank from "./pages/TaskBank.jsx";
 import Rubrics from "./pages/Rubrics.jsx";
 import Reports from "./pages/Reports.jsx";
 import Admin from "./pages/Admin.jsx";
+import Recordings from "./pages/Recordings.jsx";
 import "./App.css";
 
 const navigation = {
@@ -20,10 +21,12 @@ const navigation = {
     ["tasks", "Банк задач"],
     ["rubrics", "Шаблоны рубрик"],
     ["reports", "Отчёты"],
+    ["recordings", "Записи сессий"],
   ],
   admin: [
     ["users", "Пользователи и квоты"],
     ["audit", "Аудит"],
+    ["recordings", "Записи сессий"],
   ],
 };
 
@@ -46,7 +49,6 @@ function Application({ api, onModeChange }) {
 
   useEffect(() => {
     let active = true;
-    // Убираем секрет приглашения из адресной строки до загрузки редактора.
     if (inviteToken || setupToken)
       window.history.replaceState(null, "", window.location.pathname);
     api
@@ -227,6 +229,7 @@ function Application({ api, onModeChange }) {
           {currentPage === "tasks" && <TaskBank api={api} />}
           {currentPage === "rubrics" && <Rubrics api={api} />}
           {currentPage === "reports" && <Reports api={api} />}
+          {currentPage === "recordings" && <Recordings api={api} />}
           {["users", "audit"].includes(currentPage) && (
             <Admin key={currentPage} api={api} section={currentPage} />
           )}

@@ -10,7 +10,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Interview.Api.Controllers;
 
 [ApiController, Route("api/rooms"), Authorize]
-public class RoomsController(AppDbContext db, AccessService access, DtoService dto, RoomConnections connections) : ControllerBase
+public class RoomsController(AppDbContext db, AccessService access, DtoService dto, RoomConnections connections, SessionRecorder recorder) : ControllerBase
 {
     [HttpGet]
     public async Task<object> List()
@@ -25,12 +25,13 @@ public class RoomsController(AppDbContext db, AccessService access, DtoService d
     [HttpPost]
     public async Task<object> Create(RoomRequest request)
     {
+        await using var transaction = await db.Database.BeginTransactionAsync();
         var actor = await access.Actor(User); AccessService.Role(actor, "interviewer");
         ApiError.Require(request.TaskIds.Distinct().Count() == request.TaskIds.Length, "Одна задача указана несколько раз.");
         var tasks = await db.Tasks.Include(x => x.Tests).Where(x => request.TaskIds.Contains(x.Id)).ToListAsync();
         ApiError.Require(tasks.Count == request.TaskIds.Length, "Некоторые задачи не найдены.");
         var rubric = await db.Rubrics.Include(x => x.Criteria).SingleOrDefaultAsync(x => x.Id == request.RubricId) ?? throw new ApiError(404, "Рубрика не найдена.");
-        var room = new Room { Title = request.Title.Trim(), CandidateName = request.CandidateName.Trim(), InterviewerId = actor.Id, RubricId = rubric.Id, RubricSnapshot = DtoService.Serialize(DtoService.Rubric(rubric)) };
+        var room = new Room { Title = request.Title.Trim(), CandidateName = request.CandidateName.Trim(), InterviewerId = actor.Id, RubricId = rubric.Id, RubricSnapshot = DtoService.Serialize(DtoService.Rubric(rubric)), DurationMinutes = request.DurationMinutes };
         db.Rooms.Add(room);
         foreach (var (taskId, position) in request.TaskIds.Select((id, index) => (id, index)))
         {
@@ -39,6 +40,8 @@ public class RoomsController(AppDbContext db, AccessService access, DtoService d
             db.Documents.Add(new CodeDocument { RoomId = room.Id, TaskId = task.Id, Language = task.Language, Code = task.StarterCode });
         }
         access.Audit(actor, "room.create", room.Id); await db.SaveChangesAsync();
+        await recorder.Append(room.Id, "RoomCreated", actor, new { room.Title, room.DurationMinutes });
+        await transaction.CommitAsync();
         return await dto.Room(room, actor);
     }
 
@@ -54,14 +57,33 @@ public class RoomsController(AppDbContext db, AccessService access, DtoService d
         await access.Room(await access.Actor(User), id); return DtoService.Document(await access.Document(id, taskId));
     }
 
+    [HttpPost("{id:guid}/open")]
+    public async Task<object> Open(Guid id)
+    {
+        var actor = await access.Actor(User); AccessService.Role(actor, "interviewer");
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        await DatabaseLocks.Acquire(db, "room:" + id);
+        var room = await access.Room(actor, id);
+        ApiError.Require(room.Status == "draft", "Комната уже открыта.", 409);
+        room.Status = "waiting";
+        await recorder.Append(id, "RoomOpened", actor, new { room.Status });
+        await transaction.CommitAsync(); await connections.Changed(id);
+        return await dto.Room(room, actor);
+    }
+
     [HttpPost("{id:guid}/start")]
     public async Task<object> Start(Guid id)
     {
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        await DatabaseLocks.Acquire(db, "room:" + id);
         var actor = await access.Actor(User); AccessService.Role(actor, "interviewer");
         var room = await access.Room(actor, id);
-        ApiError.Require(room.Status == "draft", "Запустить можно только подготовленную комнату.", 409);
+        ApiError.Require(room.Status is "draft" or "waiting", "Запустить можно только подготовленную комнату.", 409);
         room.Status = "active"; room.StartedAt = DateTime.UtcNow;
-        access.Audit(actor, "room.start", id); await db.SaveChangesAsync(); await connections.Changed(id);
+        room.SessionExpiresAt = room.StartedAt.Value.AddMinutes(room.DurationMinutes);
+        access.Audit(actor, "room.start", id);
+        await recorder.Append(id, "SessionStarted", actor, new { room.StartedAt, room.SessionExpiresAt });
+        await transaction.CommitAsync(); await connections.Changed(id);
         return await dto.Room(room, actor);
     }
 
@@ -73,7 +95,7 @@ public class RoomsController(AppDbContext db, AccessService access, DtoService d
         await DatabaseLocks.Acquire(db, "room:" + id);
         var room = await access.Room(actor, id); AccessService.Active(room);
         room.Status = "completed"; room.CompletedAt = DateTime.UtcNow;
-        access.Audit(actor, "room.complete", id); await db.SaveChangesAsync(); await transaction.CommitAsync();
+        access.Audit(actor, "room.complete", id); await recorder.Append(id, "SessionFinished", actor, new { room.CompletedAt }); await transaction.CommitAsync();
         await connections.Changed(id); return await dto.Room(room, actor);
     }
 
@@ -83,7 +105,7 @@ public class RoomsController(AppDbContext db, AccessService access, DtoService d
         var actor = await access.Actor(User); AccessService.Role(actor, "interviewer");
         await using var transaction = await db.Database.BeginTransactionAsync();
         await DatabaseLocks.Acquire(db, "room:" + id);
-        var room = await access.Room(actor, id); AccessService.Active(room);
+        var room = await access.Room(actor, id); AccessService.Invitable(room);
         ApiError.Require(room.CandidateId == null, "Кандидат уже подключён к комнате.", 409);
         // Новая ссылка отменяет все предыдущие неиспользованные ссылки комнаты.
         var previous = await db.Invitations.Where(x => x.RoomId == id && x.ConsumedAt == null).ToListAsync();
@@ -98,19 +120,25 @@ public class RoomsController(AppDbContext db, AccessService access, DtoService d
     [HttpPost("{id:guid}/messages")]
     public async Task<object> Message(Guid id, MessageRequest request)
     {
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        await DatabaseLocks.Acquire(db, "room:" + id);
         var actor = await access.Actor(User); var room = await access.Room(actor, id); AccessService.Active(room);
         db.Messages.Add(new ChatMessage { RoomId = id, AuthorId = actor.Id, Author = actor.DisplayName, Text = request.Text.Trim() });
-        await db.SaveChangesAsync(); await connections.Changed(id); return await dto.Room(room, actor);
+        await recorder.Append(id, "ChatMessage", actor, new { Text = request.Text.Trim() });
+        await transaction.CommitAsync(); await connections.Changed(id); return await dto.Room(room, actor);
     }
 
     [HttpPost("{id:guid}/hints")]
     public async Task<object> Hint(Guid id, HintRequest request)
     {
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        await DatabaseLocks.Acquire(db, "room:" + id);
         var actor = await access.Actor(User); AccessService.Role(actor, "interviewer");
         var room = await access.Room(actor, id); AccessService.Active(room); await access.Document(id, request.TaskId);
         var hint = new Hint { RoomId = id, TaskId = request.TaskId, AuthorId = actor.Id, Text = request.Text.Trim() };
         db.Hints.Add(hint); access.Audit(actor, "hint.create", hint.Id);
-        await db.SaveChangesAsync(); await connections.Changed(id); return await dto.Room(room, actor);
+        await recorder.Append(id, "HintAdded", actor, new { hint.Id, hint.Text }, request.TaskId);
+        await transaction.CommitAsync(); await connections.Changed(id); return await dto.Room(room, actor);
     }
 
     [HttpPost("{id:guid}/hint-usage")]
@@ -125,7 +153,7 @@ public class RoomsController(AppDbContext db, AccessService access, DtoService d
         if (!await db.HintUsages.AnyAsync(x => x.HintId == request.HintId && x.CandidateId == room.CandidateId))
         {
             db.HintUsages.Add(new HintUsage { HintId = request.HintId, CandidateId = room.CandidateId!, MarkedById = actor.Id });
-            access.Audit(actor, "hint.used", request.HintId); await db.SaveChangesAsync();
+            access.Audit(actor, "hint.used", request.HintId); await recorder.Append(id, "HintUsed", actor, new { request.HintId });
         }
         await transaction.CommitAsync(); await connections.Changed(id); return await dto.Room(room, actor);
     }
@@ -145,7 +173,9 @@ public class RoomsController(AppDbContext db, AccessService access, DtoService d
         else { db.EvaluationScores.RemoveRange(evaluation.Scores); await db.SaveChangesAsync(); evaluation.Scores.Clear(); }
         evaluation.Comment = request.Comment ?? "";
         evaluation.Scores = request.Scores.Select(x => new EvaluationScore { EvaluationId = evaluation.Id, CriterionKey = x.Key, Score = x.Value }).ToList();
-        access.Audit(actor, "evaluation.save", evaluation.Id); await db.SaveChangesAsync(); await transaction.CommitAsync();
+        access.Audit(actor, "evaluation.save", evaluation.Id);
+        await recorder.Append(id, "EvaluationSaved", actor, new { request.Scores, request.Comment, FinalScore = ScoringService.Calculate(rubric, request.Scores) }, visibility: "staff");
+        await transaction.CommitAsync();
         await connections.Changed(id); return await dto.Room(room, actor);
     }
 }

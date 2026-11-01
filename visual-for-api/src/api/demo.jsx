@@ -1,7 +1,6 @@
 import { languages } from "./languages.jsx";
+import { finalScore } from "./scoring.js";
 
-// Только демонстрация интерфейса. Все данные в памяти, обращения к БД здесь нет.
-// API-режим не использует этот модуль как запасное хранилище при сетевой ошибке.
 export function createDemoApi() {
   const events = new EventTarget();
   const users = [
@@ -40,8 +39,6 @@ export function createDemoApi() {
     },
   ];
   let user = users[0];
-  // Демо-учётные записи существуют только до перезагрузки вкладки.
-  // Вместо открытого пароля храним соль и PBKDF2-хеш; в ASP.NET этим занимается Identity.
   const credentials = new Map();
   async function hashPassword(password, salt) {
     const key = await crypto.subtle.importKey(
@@ -157,7 +154,8 @@ export function createDemoApi() {
       taskSnapshots: undefined,
       tasks: room.taskSnapshots.map(publicTask),
       rubric: rubrics.find((rubric) => rubric.id === room.rubricId),
-      canEditCode: user.role === "candidate" && room.status === "active",
+      canEditCode: ["candidate", "interviewer"].includes(user.role) && room.status === "active",
+      canSubmit: user.role === "candidate" && room.status === "active",
       canInterview: user.role === "interviewer",
       evaluations: user.role === "candidate" ? [] : room.evaluations,
     };
@@ -327,6 +325,11 @@ export function createDemoApi() {
       if (action === "start") {
         requireRole("interviewer");
         room.status = "active";
+        room.sessionExpiresAt = new Date(Date.now() + (room.durationMinutes ?? 90) * 60000).toISOString();
+      } else if (action === "open") {
+        requireRole("interviewer"); room.status = "waiting";
+      } else if (action === "complete") {
+        requireRole("interviewer"); room.status = "completed";
       } else if (action === "invitations") {
         requireRole("interviewer");
         const token = id();
@@ -394,6 +397,7 @@ export function createDemoApi() {
           interview: room.title,
           submitted: room.submissions.length,
           hintsUsed: room.hints.filter((hint) => hint.usedAt).length,
+          finalScore: room.evaluations[0] ? finalScore(rubrics.find(rubric => rubric.id === room.rubricId).criteria, room.evaluations[0].scores) : null,
           averageScore: room.evaluations.length
             ? Object.values(room.evaluations[0].scores).reduce(
                 (sum, score) => sum + score,
@@ -446,7 +450,7 @@ export function createDemoApi() {
       return () => events.removeEventListener("change", listener);
     },
     async updateDocument(roomId, update) {
-      requireRole("candidate");
+      requireRole("candidate", "interviewer");
       const room = roomAccess(roomId);
       if (room.status !== "active") fail("Интервью не активно.");
       const document = documentFor(room, update.taskId);

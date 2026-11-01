@@ -17,7 +17,7 @@ public sealed class DtoService(AppDbContext db)
         task.Company, task.Tags, task.Language, task.StarterCode, task.TimeLimitMs, task.MemoryLimitMb,
         task.Tests.OrderBy(x => x.Position).Select(x => new TestDto(x.Id, x.Input, x.Expected, x.Hidden)).ToArray());
     public static RubricDto Rubric(Rubric rubric) => new(rubric.Id, rubric.Name,
-        rubric.Criteria.OrderBy(x => x.Position).Select(x => new CriterionDto(x.Key, x.Label, x.MaxScore)).ToArray());
+        rubric.Criteria.OrderBy(x => x.Position).Select(x => new CriterionDto(x.Key, x.Label, x.MaxScore, x.Weight)).ToArray());
 
     public async Task<UserDto> User(AppUser user)
     {
@@ -43,16 +43,19 @@ public sealed class DtoService(AppDbContext db)
             room.Id,
             room.Title,
             room.CandidateName,
-            room.Status,
+            Status = room.Status == "active" && AccessService.Expired(room) ? "completed" : room.Status,
+            room.SessionExpiresAt,
+            room.DurationMinutes,
             room.CreatedAt,
             TaskIds = tasks.Select(x => x.Id),
             Tasks = tasks,
             Rubric = Deserialize<RubricDto>(room.RubricSnapshot),
             Messages = messages.OrderBy(x => x.CreatedAt).Select(x => new { x.Id, x.Author, x.Text, x.CreatedAt }),
             Hints = hints.Select(x => new { x.Id, x.TaskId, x.Text, x.CreatedAt, UsedAt = usages.FirstOrDefault(u => u.HintId == x.Id)?.UsedAt }),
-            Evaluations = evaluations.Select(x => new { x.Id, Author = "Интервьюер", Scores = x.Scores.ToDictionary(s => s.CriterionKey, s => s.Score), x.Comment }),
+            Evaluations = evaluations.Select(x => new { x.Id, Author = "Интервьюер", Scores = x.Scores.ToDictionary(s => s.CriterionKey, s => s.Score), x.Comment, FinalScore = ScoringService.Calculate(Deserialize<RubricDto>(room.RubricSnapshot), x.Scores.ToDictionary(s => s.CriterionKey, s => s.Score)) }),
             Submissions = submissions,
-            CanEditCode = actor.Role == "candidate" && room.CandidateId == actor.Id && room.Status == "active",
+            CanEditCode = room.Status == "active" && !AccessService.Expired(room),
+            CanSubmit = actor.Role == "candidate" && room.Status == "active" && !AccessService.Expired(room),
             CanInterview = actor.Role == "interviewer" && room.InterviewerId == actor.Id
         };
     }
@@ -63,6 +66,13 @@ public sealed class DtoService(AppDbContext db)
         run.Status,
         run.Summary,
         run.Output,
-        Tests = run.Tests.OrderBy(x => x.Position).Select(x => new { Id = x.Position, x.Passed })
+        Tests = run.Tests.OrderBy(x => x.Position).Select(x => new
+        {
+            Id = x.Position,
+            x.Passed,
+            x.DurationMs,
+            x.MemoryKb,
+            Message = x.ErrorKind switch { "compile" => "Ошибка компиляции", "timeout" => "Превышено время", "output" => "Превышен объём вывода", "resource" => "Лимит памяти или ресурсов", "runtime" => "Ошибка выполнения", _ => null }
+        })
     };
 }

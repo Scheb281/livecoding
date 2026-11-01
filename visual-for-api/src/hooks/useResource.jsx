@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
 
-// При смене страницы отменяем старый запрос, чтобы он не заменил новые данные.
 export function useResource(api, path) {
   const [state, setState] = useState({ data: null, loading: true, error: "" });
   const [revision, setRevision] = useState(0);
@@ -23,7 +22,6 @@ export function useResource(api, path) {
   return { ...state, refresh };
 }
 
-// Общая обработка сохранения: форма не выдаёт ошибку за успешную запись в БД.
 export function useAction() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");

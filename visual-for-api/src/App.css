@@ -3,6 +3,15 @@
   grid-template-columns: 242px minmax(0, 1fr);
   min-height: 100svh;
 }
+
+.peer-cursor-mark { border-left: 2px solid #f2c879; margin-left: -1px; }
+.peer-cursor { background: #e1b45a33; }
+.session-timer { display: inline-block; border: 1px solid #485b48; border-radius: 6px; padding: 9px 12px; margin-right: 16px; color: #b9e2bf; font-variant-numeric: tabular-nums; }
+.replay-panel { margin-top: 24px; }
+.session-events { max-height: 320px; overflow-y: auto; padding-left: 24px; }
+.session-events li { border-bottom: 1px solid #303743; padding: 8px 0; }
+.session-events p { white-space: pre-wrap; overflow-wrap: anywhere; padding-inline: 12px; }
+meter { display: block; width: 120px; height: 12px; margin-top: 8px; }
 .sidebar {
   display: flex;
   flex-direction: column;

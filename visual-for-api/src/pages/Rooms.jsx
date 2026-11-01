@@ -20,6 +20,7 @@ export default function Rooms({ api, user, onOpen }) {
     candidateName: "",
     taskIds: [],
     rubricId: "",
+    durationMinutes: 90,
   });
   const [showForm, setShowForm] = useState(false);
   async function createRoom(event) {
@@ -81,6 +82,22 @@ export default function Rooms({ api, user, onOpen }) {
               </label>
             </div>
             <label>
+              Длительность интервью, минут
+              <input
+                type="number"
+                required
+                min={5}
+                max={240}
+                value={form.durationMinutes}
+                onChange={(event) =>
+                  setForm({
+                    ...form,
+                    durationMinutes: Number(event.target.value),
+                  })
+                }
+              />
+            </label>
+            <label>
               Рубрика
               <select
                 required
@@ -138,7 +155,9 @@ export default function Rooms({ api, user, onOpen }) {
                   ? "В процессе"
                   : room.status === "draft"
                     ? "Подготовка"
-                    : "Завершено"}
+                    : room.status === "waiting"
+                      ? "Ожидание"
+                      : "Завершено"}
               </span>
               <span className="muted">{room.tasks.length} задач</span>
             </div>

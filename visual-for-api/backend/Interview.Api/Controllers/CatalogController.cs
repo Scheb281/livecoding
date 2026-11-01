@@ -83,10 +83,10 @@ public class CatalogController(AppDbContext db, AccessService access) : Controll
     public async Task<object> CreateRubric(RubricRequest request)
     {
         var actor = await Staff(); AccessService.Role(actor, "teamlead");
-        ApiError.Require(request.Criteria.All(x => x != null && !string.IsNullOrWhiteSpace(x.Id) && x.Id.Length <= 50 && !string.IsNullOrWhiteSpace(x.Label) && x.Label.Length <= 100 && x.MaxScore is >= 1 and <= 100), "Проверьте критерии рубрики.");
+        ApiError.Require(request.Criteria.All(x => x != null && !string.IsNullOrWhiteSpace(x.Id) && x.Id.Length <= 50 && !string.IsNullOrWhiteSpace(x.Label) && x.Label.Length <= 100 && x.MaxScore is >= 1 and <= 100 && x.Weight > 0 && x.Weight <= 100), "Проверьте критерии и веса рубрики.");
         ApiError.Require(request.Criteria.Select(x => x.Id).Distinct().Count() == request.Criteria.Length, "Критерии не должны повторяться.");
         var rubric = new Rubric { OwnerId = actor.Id, Name = request.Name.Trim() };
-        rubric.Criteria = request.Criteria.Select((criterion, index) => new RubricCriterion { RubricId = rubric.Id, Key = criterion.Id, Label = criterion.Label, MaxScore = criterion.MaxScore, Position = index }).ToList();
+        rubric.Criteria = request.Criteria.Select((criterion, index) => new RubricCriterion { RubricId = rubric.Id, Key = criterion.Id, Label = criterion.Label, MaxScore = criterion.MaxScore, Weight = criterion.Weight, Position = index }).ToList();
         db.Rubrics.Add(rubric); access.Audit(actor, "rubric.create", rubric.Id);
         await db.SaveChangesAsync();
         return DtoService.Rubric(rubric);

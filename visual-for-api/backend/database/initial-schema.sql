@@ -760,3 +760,242 @@ BEGIN
 END $EF$;
 COMMIT;
 
+START TRANSACTION;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261031215900_SessionRecordingAndProtection') THEN
+    ALTER TABLE "Interviews" DROP CONSTRAINT "CK_Room_Status";
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261031215900_SessionRecordingAndProtection') THEN
+    ALTER TABLE "TaskTests" ALTER COLUMN "Input" TYPE text;
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261031215900_SessionRecordingAndProtection') THEN
+    ALTER TABLE "TaskTests" ALTER COLUMN "Expected" TYPE text;
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261031215900_SessionRecordingAndProtection') THEN
+    ALTER TABLE "Tasks" ALTER COLUMN "StarterCode" TYPE text;
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261031215900_SessionRecordingAndProtection') THEN
+    ALTER TABLE "RubricCriteria" ADD "Weight" numeric(8,2) NOT NULL DEFAULT 1.0;
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261031215900_SessionRecordingAndProtection') THEN
+    ALTER TABLE "InterviewTasks" ALTER COLUMN "TaskSnapshot" TYPE text;
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261031215900_SessionRecordingAndProtection') THEN
+    ALTER TABLE "Interviews" ALTER COLUMN "RubricSnapshot" TYPE text;
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261031215900_SessionRecordingAndProtection') THEN
+    ALTER TABLE "Interviews" ADD "DurationMinutes" integer NOT NULL DEFAULT 90;
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261031215900_SessionRecordingAndProtection') THEN
+    ALTER TABLE "Interviews" ADD "NextEventSequence" integer NOT NULL DEFAULT 0;
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261031215900_SessionRecordingAndProtection') THEN
+    ALTER TABLE "Interviews" ADD "SessionExpiresAt" timestamp with time zone;
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261031215900_SessionRecordingAndProtection') THEN
+    ALTER TABLE "Hints" ALTER COLUMN "Text" TYPE text;
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261031215900_SessionRecordingAndProtection') THEN
+    ALTER TABLE "Evaluations" ALTER COLUMN "Comment" TYPE text;
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261031215900_SessionRecordingAndProtection') THEN
+    ALTER TABLE "CodeRunTests" ADD "ErrorKind" text;
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261031215900_SessionRecordingAndProtection') THEN
+    ALTER TABLE "CodeEvents" ALTER COLUMN "Code" TYPE text;
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261031215900_SessionRecordingAndProtection') THEN
+    ALTER TABLE "CodeEvents" ADD "SessionSequence" integer;
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261031215900_SessionRecordingAndProtection') THEN
+    ALTER TABLE "CodeDocuments" ALTER COLUMN "Code" TYPE text;
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261031215900_SessionRecordingAndProtection') THEN
+    ALTER TABLE "ChatMessages" ALTER COLUMN "Text" TYPE text;
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261031215900_SessionRecordingAndProtection') THEN
+    UPDATE "Interviews" SET "SessionExpiresAt" = COALESCE("StartedAt", "CreatedAt") + "DurationMinutes" * INTERVAL '1 minute' WHERE "Status" = 'active' AND "SessionExpiresAt" IS NULL
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261031215900_SessionRecordingAndProtection') THEN
+    CREATE TABLE "SessionEvents" (
+        "Id" uuid NOT NULL,
+        "RoomId" uuid NOT NULL,
+        "Sequence" integer NOT NULL,
+        "TaskId" uuid,
+        "ActorId" text,
+        "Author" text NOT NULL,
+        "Type" character varying(50) NOT NULL,
+        "Visibility" character varying(20) NOT NULL,
+        "Payload" text NOT NULL,
+        "CreatedAt" timestamp with time zone NOT NULL,
+        CONSTRAINT "PK_SessionEvents" PRIMARY KEY ("Id"),
+        CONSTRAINT "FK_SessionEvents_AspNetUsers_ActorId" FOREIGN KEY ("ActorId") REFERENCES "AspNetUsers" ("Id") ON DELETE RESTRICT,
+        CONSTRAINT "FK_SessionEvents_Interviews_RoomId" FOREIGN KEY ("RoomId") REFERENCES "Interviews" ("Id") ON DELETE RESTRICT
+    );
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261031215900_SessionRecordingAndProtection') THEN
+    ALTER TABLE "RubricCriteria" ADD CONSTRAINT "CK_Criterion_Weight" CHECK ("Weight" > 0 AND "Weight" <= 100);
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261031215900_SessionRecordingAndProtection') THEN
+    ALTER TABLE "Interviews" ADD CONSTRAINT "CK_Room_Duration" CHECK ("DurationMinutes" BETWEEN 5 AND 240);
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261031215900_SessionRecordingAndProtection') THEN
+    ALTER TABLE "Interviews" ADD CONSTRAINT "CK_Room_Status" CHECK ("Status" IN ('draft','waiting','active','completed'));
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261031215900_SessionRecordingAndProtection') THEN
+    CREATE INDEX "IX_SessionEvents_ActorId" ON "SessionEvents" ("ActorId");
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261031215900_SessionRecordingAndProtection') THEN
+    CREATE UNIQUE INDEX "IX_SessionEvents_RoomId_Sequence" ON "SessionEvents" ("RoomId", "Sequence");
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261031215900_SessionRecordingAndProtection') THEN
+    INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+    VALUES ('20261031215900_SessionRecordingAndProtection', '10.0.13');
+    END IF;
+END $EF$;
+COMMIT;
+
+START TRANSACTION;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261031220505_AlignIdentitySchema') THEN
+    ALTER TABLE "AspNetUserTokens" ALTER COLUMN "Name" TYPE character varying(128);
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261031220505_AlignIdentitySchema') THEN
+    ALTER TABLE "AspNetUserTokens" ALTER COLUMN "LoginProvider" TYPE character varying(128);
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261031220505_AlignIdentitySchema') THEN
+    ALTER TABLE "AspNetUsers" ALTER COLUMN "PhoneNumber" TYPE character varying(256);
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261031220505_AlignIdentitySchema') THEN
+    ALTER TABLE "AspNetUserLogins" ALTER COLUMN "ProviderKey" TYPE character varying(128);
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261031220505_AlignIdentitySchema') THEN
+    ALTER TABLE "AspNetUserLogins" ALTER COLUMN "LoginProvider" TYPE character varying(128);
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20261031220505_AlignIdentitySchema') THEN
+    INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+    VALUES ('20261031220505_AlignIdentitySchema', '10.0.13');
+    END IF;
+END $EF$;
+COMMIT;
+

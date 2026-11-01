@@ -1,5 +1,6 @@
 using Interview.Api.Data;
 using Interview.Api.Services;
+using Interview.Api.Contracts;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -25,6 +26,12 @@ public class ReportsController(AppDbContext db, AccessService access) : Controll
             var scores = evaluations.Where(x => x.RoomId == roomId).SelectMany(x => x.Scores).Select(x => x.Score).ToArray();
             return scores.Length == 0 ? null : scores.Average();
         }
+        decimal? Final(Guid roomId)
+        {
+            var room = rooms.Single(r => r.Id == roomId);
+            var evaluation = evaluations.FirstOrDefault(e => e.RoomId == roomId);
+            return evaluation == null ? null : ScoringService.Calculate(DtoService.Deserialize<RubricDto>(room.RubricSnapshot), evaluation.Scores.ToDictionary(s => s.CriterionKey, s => s.Score));
+        }
         return new
         {
             Candidates = rooms.Where(x => x.CandidateId != null).Select(room => new
@@ -34,7 +41,8 @@ public class ReportsController(AppDbContext db, AccessService access) : Controll
                 Interview = room.Title,
                 Submitted = submissions.Count(x => x.RoomId == room.Id),
                 HintsUsed = usages.Count(x => hints.Any(hint => hint.Id == x.HintId && hint.RoomId == room.Id)),
-                AverageScore = Average(room.Id)
+                AverageScore = Average(room.Id),
+                FinalScore = Final(room.Id)
             }),
             Tasks = tasks.Select(task =>
             {

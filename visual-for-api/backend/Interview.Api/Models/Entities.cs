@@ -57,6 +57,7 @@ public class RubricCriterion
     public string Key { get; set; } = "";
     public string Label { get; set; } = "";
     public int MaxScore { get; set; } = 5;
+    public decimal Weight { get; set; } = 1m;
     public int Position { get; set; }
 }
 
@@ -73,6 +74,9 @@ public class Room
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? StartedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
+    public int DurationMinutes { get; set; } = 90;
+    public DateTime? SessionExpiresAt { get; set; }
+    public int NextEventSequence { get; set; }
 }
 
 public class RoomTask
@@ -121,6 +125,7 @@ public class CodeEvent
     public string AuthorId { get; set; } = "";
     public Guid MutationId { get; set; }
     public int Version { get; set; }
+    public int? SessionSequence { get; set; }
     public string Language { get; set; } = "";
     public string Code { get; set; } = "";
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
@@ -209,6 +214,7 @@ public class CodeRunTest
     public bool Passed { get; set; }
     public int DurationMs { get; set; }
     public int MemoryKb { get; set; }
+    public string? ErrorKind { get; set; }
 }
 
 public class DailyRunUsage
@@ -225,5 +231,19 @@ public class AuditEvent
     public string Actor { get; set; } = "";
     public string Action { get; set; } = "";
     public string? EntityId { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+public class SessionEvent
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid RoomId { get; set; }
+    public int Sequence { get; set; }
+    public Guid? TaskId { get; set; }
+    public string? ActorId { get; set; }
+    public string Author { get; set; } = "Система";
+    public string Type { get; set; } = "";
+    public string Visibility { get; set; } = "participants";
+    public string Payload { get; set; } = "{}";
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

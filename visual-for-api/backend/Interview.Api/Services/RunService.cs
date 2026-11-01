@@ -6,13 +6,14 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Interview.Api.Services;
 
-public sealed class RunService(AppDbContext db, IConfiguration config, AccessService access)
+public sealed class RunService(AppDbContext db, IConfiguration config, AccessService access, SessionRecorder recorder)
 {
     public bool Enabled => !string.IsNullOrWhiteSpace(config["Runner:BaseUrl"]) && !string.IsNullOrWhiteSpace(config["Runner:ApiKey"]);
 
     // Квота резервируется в той же транзакции, что и запись задания в очередь.
     public async Task<CodeRun> Create(AppUser actor, Guid roomId, VersionRequest request)
     {
+        AccessService.Active(await access.Room(actor, roomId));
         ApiError.Require(Enabled, "Сервис выполнения пока не подключён. Настройте отдельный изолированный runner.", 503);
         await using var transaction = await db.Database.BeginTransactionAsync();
         await DatabaseLocks.Acquire(db, "run-queue");
@@ -31,7 +32,8 @@ public sealed class RunService(AppDbContext db, IConfiguration config, AccessSer
         usage.ReservedRuns++;
         var run = new CodeRun { RoomId = roomId, TaskId = request.TaskId, UserId = actor.Id, DocumentVersion = document.Version, Language = document.Language, Code = document.Code };
         db.Runs.Add(run); access.Audit(actor, "code-run.queue", run.Id);
-        await db.SaveChangesAsync(); await transaction.CommitAsync();
+        await recorder.Append(roomId, "RunQueued", actor, new { run.Id, run.DocumentVersion }, request.TaskId);
+        await transaction.CommitAsync();
         return run;
     }
 }

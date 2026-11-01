@@ -9,6 +9,8 @@ import {
   ResourceState,
 } from "../components/Common.jsx";
 import CodeWorkspace from "../components/CodeWorkspace.jsx";
+import SessionReplay from "../components/SessionReplay.jsx";
+import SessionTimer from "../components/SessionTimer.jsx";
 import {
   ChatPanel,
   EvaluationPanel,
@@ -21,6 +23,7 @@ export default function InterviewRoom({ api, roomId, onBack }) {
   const [selectedTaskId, setSelectedTaskId] = useState("");
   const [invitation, setInvitation] = useState(null);
   const [copyStatus, setCopyStatus] = useState("");
+  const [showReplay, setShowReplay] = useState(false);
   const room = resource.data;
   const task =
     room?.tasks.find((item) => item.id === selectedTaskId) ?? room?.tasks[0];
@@ -60,13 +63,45 @@ export default function InterviewRoom({ api, roomId, onBack }) {
               ? "интервью идёт"
               : room.status === "draft"
                 ? "подготовка"
-                : "завершено"}{" "}
+                : room.status === "waiting"
+                  ? "ожидание кандидата"
+                  : "завершено"}{" "}
             · Записано решений: {room.submissions.length}
           </PageTitle>
+          <SessionTimer
+            expiresAt={room.sessionExpiresAt}
+            status={room.status}
+            onExpired={resource.refresh}
+          />
+          <button
+            className="secondary"
+            onClick={() => setShowReplay(!showReplay)}
+          >
+            {showReplay ? "Вернуться в комнату" : "Запись сессии"}
+          </button>
           {room.canInterview && (
             <section className="panel">
               <div className="toolbar">
                 {room.status === "draft" && (
+                  <button
+                    disabled={action.busy}
+                    onClick={async () => {
+                      if (
+                        await action.run(
+                          () =>
+                            api.request(`/rooms/${room.id}/open`, {
+                              method: "POST",
+                            }),
+                          "Комната открыта для кандидата",
+                        )
+                      )
+                        resource.refresh();
+                    }}
+                  >
+                    Открыть комнату
+                  </button>
+                )}
+                {room.status === "waiting" && (
                   <button
                     disabled={action.busy}
                     onClick={async () => {
@@ -87,11 +122,33 @@ export default function InterviewRoom({ api, roomId, onBack }) {
                 )}
                 <button
                   className="secondary"
-                  disabled={action.busy || room.status !== "active"}
+                  disabled={
+                    action.busy || !["waiting", "active"].includes(room.status)
+                  }
                   onClick={invite}
                 >
                   Создать одноразовое приглашение
                 </button>
+                {room.status === "active" && (
+                  <button
+                    className="secondary"
+                    disabled={action.busy}
+                    onClick={async () => {
+                      if (
+                        await action.run(
+                          () =>
+                            api.request(`/rooms/${room.id}/complete`, {
+                              method: "POST",
+                            }),
+                          "Интервью завершено",
+                        )
+                      )
+                        resource.refresh();
+                    }}
+                  >
+                    Завершить интервью
+                  </button>
+                )}
               </div>
               {invitation && (
                 <div className="stack invitation">
@@ -123,7 +180,9 @@ export default function InterviewRoom({ api, roomId, onBack }) {
               <ActionState action={action} />
             </section>
           )}
-          {task ? (
+          {showReplay ? (
+            <SessionReplay api={api} roomId={room.id} />
+          ) : task ? (
             <>
               <div className="room-grid">
                 <aside className="stack">

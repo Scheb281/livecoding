@@ -14,12 +14,15 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Npgsql;
 
 namespace Interview.Api.Tests;
 
 public sealed class ApiFactory(bool runnerEnabled = false) : WebApplicationFactory<Program>
 {
     private readonly string databasePath = Path.Combine(Path.GetTempPath(), $"interview-api-tests-{Guid.NewGuid():N}.db");
+    private readonly string? postgres = Environment.GetEnvironmentVariable("INTERVIEW_TEST_POSTGRES");
+    private readonly string schema = "test_" + Guid.NewGuid().ToString("N");
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
@@ -33,7 +36,16 @@ public sealed class ApiFactory(bool runnerEnabled = false) : WebApplicationFacto
         {
             services.RemoveAll<DbContextOptions<AppDbContext>>();
             services.RemoveAll<IDbContextOptionsConfiguration<AppDbContext>>();
-            services.AddDbContext<AppDbContext>(options => options.UseSqlite($"Data Source={databasePath};Pooling=False;Default Timeout=10"));
+            services.AddDbContext<AppDbContext>(options =>
+            {
+                if (postgres == null) options.UseSqlite($"Data Source={databasePath};Pooling=False;Default Timeout=10");
+                else
+                {
+                    var connection = new NpgsqlConnectionStringBuilder(postgres) { SearchPath = schema };
+                    if (connection.Database != "interview_tests") throw new InvalidOperationException("Для тестов допустима только отдельная БД interview_tests.");
+                    options.UseNpgsql(connection.ConnectionString, npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", schema));
+                }
+            });
             var worker = services.FirstOrDefault(x => x.ImplementationType == typeof(RunWorker));
             if (worker != null) services.Remove(worker);
             if (runnerEnabled) services.AddHttpClient("runner").ConfigurePrimaryHttpMessageHandler(() => new FakeSandboxHandler());
@@ -44,7 +56,15 @@ public sealed class ApiFactory(bool runnerEnabled = false) : WebApplicationFacto
     {
         using var scope = Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        await db.Database.EnsureCreatedAsync();
+        if (postgres == null) await db.Database.EnsureCreatedAsync();
+        else
+        {
+            await db.Database.OpenConnectionAsync();
+            await using var command = db.Database.GetDbConnection().CreateCommand();
+            command.CommandText = $"CREATE SCHEMA \"{schema}\""; // schema состоит только из локального GUID, не из HTTP-ввода.
+            await command.ExecuteNonQueryAsync();
+            await db.Database.MigrateAsync();
+        }
         await DatabaseSetup.SeedRoles(scope.ServiceProvider);
         var users = scope.ServiceProvider.GetRequiredService<UserManager<AppUser>>();
         foreach (var role in new[] { "admin", "teamlead", "interviewer" })
@@ -60,6 +80,11 @@ public sealed class ApiFactory(bool runnerEnabled = false) : WebApplicationFacto
 
     public override async ValueTask DisposeAsync()
     {
+        if (postgres != null)
+        {
+            await using var cleanup = new NpgsqlConnection(postgres); await cleanup.OpenAsync();
+            await using var command = cleanup.CreateCommand(); command.CommandText = $"DROP SCHEMA IF EXISTS \"{schema}\" CASCADE"; await command.ExecuteNonQueryAsync();
+        }
         await base.DisposeAsync();
         File.Delete(databasePath);
         File.Delete(databasePath + "-shm");

@@ -42,7 +42,7 @@ public sealed class RunWorker(IServiceScopeFactory scopes, IHttpClientFactory cl
         try
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
-            timeout.CancelAfter(TimeSpan.FromSeconds(45));
+            timeout.CancelAfter(TimeSpan.FromSeconds(180));
             var runnerCancellation = timeout.Token;
             var assignment = await db.RoomTasks.SingleAsync(x => x.RoomId == run.RoomId && x.TaskId == run.TaskId, cancellation);
             var task = DtoService.Deserialize<TaskDto>(assignment.TaskSnapshot);
@@ -70,12 +70,13 @@ public sealed class RunWorker(IServiceScopeFactory scopes, IHttpClientFactory cl
             foreach (var testResult in result.Tests.OrderBy(x => x.Position))
             {
                 var test = task.Tests[testResult.Position];
-                var passed = !testResult.TimedOut && testResult.ExitCode == 0 && Normalize(testResult.Output) == Normalize(test.Expected);
+                var passed = !testResult.TimedOut && testResult.ErrorKind == null && testResult.ExitCode == 0 && Normalize(testResult.Output) == Normalize(test.Expected);
                 run.Tests.Add(new CodeRunTest
                 {
                     RunId = run.Id,
                     Position = testResult.Position,
                     Passed = passed,
+                    ErrorKind = testResult.ErrorKind,
                     DurationMs = Math.Max(0, testResult.DurationMs),
                     MemoryKb = Math.Max(0, testResult.MemoryKb)
                 });
@@ -87,7 +88,7 @@ public sealed class RunWorker(IServiceScopeFactory scopes, IHttpClientFactory cl
             // Если решение отправили до окончания проверки, связываем точный неизменяемый снимок.
             if (run.AllPassed)
             {
-                var submissions = await db.Submissions.Where(x => x.RoomId == run.RoomId && x.TaskId == run.TaskId && x.DocumentVersion == run.DocumentVersion && x.Code == run.Code && x.Language == run.Language).ToListAsync(cancellation);
+                var submissions = await db.Submissions.Where(x => x.RoomId == run.RoomId && x.TaskId == run.TaskId && x.DocumentVersion == run.DocumentVersion && x.Language == run.Language).ToListAsync(cancellation);
                 submissions.ForEach(x => x.VerifiedRunId = run.Id);
             }
         }
@@ -97,7 +98,7 @@ public sealed class RunWorker(IServiceScopeFactory scopes, IHttpClientFactory cl
             logger.LogWarning("Runner не завершил запуск {RunId}: {ErrorType}", run.Id, error.GetType().Name);
         }
         run.CompletedAt = DateTime.UtcNow;
-        await db.SaveChangesAsync(cancellation);
+        await scope.ServiceProvider.GetRequiredService<SessionRecorder>().Append(run.RoomId, "RunCompleted", null, new { run.Id, run.Status, run.Summary }, run.TaskId);
         await scope.ServiceProvider.GetRequiredService<RoomConnections>().Changed(run.RoomId);
         return true;
     }

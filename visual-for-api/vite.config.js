@@ -7,7 +7,9 @@ export default defineConfig(({ mode }) => {
     environment.ASPNET_URL || process.env.ASPNET_URL || "http://localhost:5000";
   return {
     plugins: [react()],
+    cacheDir: ".vite-cache",
     server: {
+      watch: { ignored: ["**/backend/**"] },
       proxy: {
         "/api": { target: apiUrl },
         "/hubs": { target: apiUrl, ws: true },
@@ -15,3 +17,4 @@ export default defineConfig(({ mode }) => {
     },
   };
 });
+

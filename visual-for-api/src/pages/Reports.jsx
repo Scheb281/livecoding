@@ -7,7 +7,9 @@ function score(value) {
 
 export default function Reports({ api }) {
   const resource = useResource(api, "/reports");
-  const candidates = resource.data?.candidates ?? [];
+  const candidates = [...(resource.data?.candidates ?? [])].sort(
+    (left, right) => (right.finalScore ?? -1) - (left.finalScore ?? -1),
+  );
   const tasks = resource.data?.tasks ?? [];
   return (
     <>
@@ -26,6 +28,7 @@ export default function Reports({ api }) {
                 <th>Решений отправлено</th>
                 <th>Подсказок использовано</th>
                 <th>Средний балл</th>
+                <th>Итог с весами, /100</th>
               </tr>
             </thead>
             <tbody>
@@ -38,6 +41,12 @@ export default function Reports({ api }) {
                   <td>{candidate.submitted}</td>
                   <td>{candidate.hintsUsed}</td>
                   <td>{score(candidate.averageScore)}</td>
+                  <td>
+                    {score(candidate.finalScore)}
+                    {candidate.finalScore != null && (
+                      <meter min={0} max={100} value={candidate.finalScore} />
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

@@ -10,13 +10,57 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.DataProtection;
+using System.Security.Cryptography.X509Certificates;
+using Microsoft.AspNetCore.HttpOverrides;
+using System.Net;
 
 var builder = WebApplication.CreateBuilder(args);
+if (args.Contains("--create-keyring-certificate")) { KeyringCertificate.Create(builder.Configuration); return; }
+
+// Один и тот же долговечный key ring нужен cookie и зашифрованным полям БД.
+
+var keyDirectory = builder.Configuration["Security:KeysDirectory"] ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "visual-interview", "keys");
+
+if (string.IsNullOrWhiteSpace(keyDirectory)) 
+    throw new InvalidOperationException("Security:KeysDirectory должен содержать путь к закрытой папке ключей.");
+
+var protection = builder.Services.AddDataProtection().SetApplicationName("visual-interview")
+    .PersistKeysToFileSystem(new DirectoryInfo(keyDirectory));
+
+var certificatePath = builder.Configuration["Security:KeyEncryptionCertificatePath"];
+
+if (!string.IsNullOrWhiteSpace(certificatePath))
+    protection.ProtectKeysWithCertificate(X509CertificateLoader.LoadPkcs12FromFile(certificatePath, builder.Configuration["Security:KeyEncryptionCertificatePassword"], X509KeyStorageFlags.EphemeralKeySet));
+else if (OperatingSystem.IsWindows()) 
+    protection.ProtectKeysWithDpapi();
+else if (!builder.Environment.IsDevelopment() && !builder.Environment.IsEnvironment("Testing"))
+    throw new InvalidOperationException("Для production задайте сертификат шифрования key ring: Security:KeyEncryptionCertificatePath.");
+
+builder.Services.AddSingleton<FieldCipher>();
+
+var trustedProxies = builder.Configuration.GetSection("Security:TrustedProxies").Get<string[]>() ?? [];
+
+if (trustedProxies.Length > 0) builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.KnownIPNetworks.Clear();
+    foreach (var proxy in trustedProxies)
+    {
+        if (!IPAddress.TryParse(proxy, out var address)) throw new InvalidOperationException("TrustedProxies принимает только явные IP-адреса доверенного reverse proxy.");
+        options.KnownIPNetworks.Add(new System.Net.IPNetwork(address, address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork ? 32 : 128));
+    }
+});
+
 builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestBodySize = 256 * 1024);
+
 var connection = builder.Configuration.GetConnectionString("Database");
+
 if (string.IsNullOrWhiteSpace(connection) && !builder.Environment.IsEnvironment("Testing"))
     throw new InvalidOperationException("Задайте ConnectionStrings:Database через dotnet user-secrets или ConnectionStrings__Database. Затем выполните dotnet run -- --migrate.");
+
 builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(connection ?? "Host=localhost;Database=interview;Username=postgres"));
+
 builder.Services.AddIdentity<AppUser, IdentityRole>(options =>
 {
     options.User.RequireUniqueEmail = true;
@@ -61,8 +105,10 @@ builder.Services.AddSignalR(options => { options.MaximumReceiveMessageSize = 256
 builder.Services.AddScoped<AccessService>();
 builder.Services.AddScoped<DtoService>();
 builder.Services.AddScoped<RunService>();
+builder.Services.AddScoped<SessionRecorder>();
 builder.Services.AddSingleton<RoomConnections>();
 builder.Services.AddHostedService<RunWorker>();
+builder.Services.AddHostedService<RoomExpiryWorker>();
 builder.Services.AddHttpClient("runner", client =>
 {
     var baseUrl = builder.Configuration["Runner:BaseUrl"];
@@ -70,9 +116,11 @@ builder.Services.AddHttpClient("runner", client =>
     {
         var uri = new Uri(baseUrl.TrimEnd('/') + "/", UriKind.Absolute);
         if (uri.Scheme is not ("http" or "https")) throw new InvalidOperationException("Runner:BaseUrl должен быть HTTP(S)-адресом собственного sandbox-сервиса.");
+        if (!builder.Environment.IsDevelopment() && !builder.Environment.IsEnvironment("Testing") && uri.Scheme != "https")
+            throw new InvalidOperationException("В production соединение API с runner должно использовать HTTPS.");
         client.BaseAddress = uri;
     }
-    client.Timeout = TimeSpan.FromSeconds(45);
+    client.Timeout = TimeSpan.FromSeconds(180);
 }).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 builder.Services.AddRateLimiter(options =>
 {
@@ -86,6 +134,12 @@ builder.Services.AddRateLimiter(options =>
 });
 
 var app = builder.Build();
+if (trustedProxies.Length > 0) app.UseForwardedHeaders();
+if (!app.Environment.IsDevelopment() && !app.Environment.IsEnvironment("Testing"))
+{
+    app.UseHsts();
+    app.UseHttpsRedirection();
+}
 app.Use(async (context, next) =>
 {
     context.Response.Headers["X-Content-Type-Options"] = "nosniff";
@@ -135,8 +189,7 @@ if (!app.Environment.IsEnvironment("Testing"))
     if (args.Contains("--migrate")) await scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.MigrateAsync();
     await DatabaseSetup.SeedRoles(scope.ServiceProvider);
     if (args.Contains("--bootstrap-admin")) await DatabaseSetup.BootstrapAdmin(scope.ServiceProvider, app.Configuration);
-    if (args.Contains("--migrate") || args.Contains("--bootstrap-admin")) return;
+    if (args.Contains("--encrypt-existing-data")) await EncryptionBackfill.Run(scope.ServiceProvider.GetRequiredService<AppDbContext>());
+    if (args.Contains("--migrate") || args.Contains("--bootstrap-admin") || args.Contains("--encrypt-existing-data")) return;
 }
 await app.RunAsync();
-
-public partial class Program { }

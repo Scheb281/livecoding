@@ -145,7 +145,7 @@ test("устаревшее изменение кода не перезаписы
     (await api.request("/rooms/room-1/documents/task-1")).code,
     "print(5)",
   );
-  await role(api, "interviewer");
+  await role(api, "teamlead");
   await assert.rejects(
     api.updateDocument("room-1", { taskId: "task-1" }),
     /Нет доступа/,

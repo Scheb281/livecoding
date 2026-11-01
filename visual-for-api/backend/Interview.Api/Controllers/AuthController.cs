@@ -77,7 +77,7 @@ public class AuthController(AppDbContext db, UserManager<AppUser> users, SignInM
             "Приглашение недействительно, истекло или уже использовано.", 409);
         await DatabaseLocks.Acquire(db, "room:" + invitation!.RoomId);
         var room = await db.Rooms.SingleAsync(x => x.Id == invitation.RoomId);
-        AccessService.Active(room);
+        AccessService.Invitable(room);
         ApiError.Require(room.CandidateId == null, "К этой комнате уже подключён кандидат.", 409);
         AppUser? candidate = null;
         if (User.Identity?.IsAuthenticated == true)
@@ -96,7 +96,7 @@ public class AuthController(AppDbContext db, UserManager<AppUser> users, SignInM
         room.CandidateName = request.Name.Trim();
         invitation.ConsumedAt = DateTime.UtcNow;
         access.Audit(candidate, "invitation.redeem", room.Id);
-        await db.SaveChangesAsync();
+        await HttpContext.RequestServices.GetRequiredService<SessionRecorder>().Append(room.Id, "CandidateJoined", candidate, new { room.CandidateName });
         await transaction.CommitAsync();
         await signIn.SignInAsync(candidate, false);
         await HttpContext.RequestServices.GetRequiredService<RoomConnections>().Changed(room.Id);

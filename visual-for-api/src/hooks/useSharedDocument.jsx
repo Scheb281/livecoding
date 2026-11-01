@@ -6,6 +6,9 @@ export function useSharedDocument(api, roomId, taskId, refreshRoom) {
   const [document, setDocument] = useState(null);
   const [status, setStatus] = useState("Загрузка кода…");
   const [ready, setReady] = useState(false);
+  const [canWrite, setCanWrite] = useState(false);
+  const [editorOwner, setEditorOwner] = useState("");
+  const [peers, setPeers] = useState({});
   const controllerRef = useRef(null);
 
   useEffect(() => {
@@ -19,6 +22,20 @@ export function useSharedDocument(api, roomId, taskId, refreshRoom) {
     let connected = false;
     let connection;
     let accessRevoked = false;
+    let ownsEditor = api.mode === "demo";
+    let cursorTimer;
+    let latestCursor;
+
+    function controlChanged(control) {
+      ownsEditor = control.connectionId === connection?.connectionId;
+      setCanWrite(ownsEditor);
+      setEditorOwner(control.name ?? "Редактор свободен");
+      if (!ownsEditor) clearTimeout(timer);
+      if (!ownsEditor && dirty)
+        report(
+          "Управление передано. Есть несохранённый текст: скопируйте его или загрузите сохранённую версию.",
+        );
+    }
 
     function report(text) {
       if (!disposed) setStatus(text);
@@ -45,7 +62,7 @@ export function useSharedDocument(api, roomId, taskId, refreshRoom) {
         return serverVersion;
       }
       if (!dirty) return serverVersion;
-      if (!connected)
+      if (!connected || !ownsEditor)
         throw new Error("Нет связи. Изменения пока не сохранены.");
       const update = {
         taskId,
@@ -89,6 +106,57 @@ export function useSharedDocument(api, roomId, taskId, refreshRoom) {
         }, 300);
       },
       flush,
+      async takeControl() {
+        try {
+          if (api.mode === "demo") {
+            ownsEditor = true;
+            setCanWrite(true);
+            return;
+          }
+          setReady(false);
+          controlChanged(await connection.invoke("TakeEditorControl", roomId));
+          await load();
+        } catch (error) {
+          report(error.message);
+        } finally {
+          if (!disposed) setReady(connected);
+        }
+      },
+      async releaseControl() {
+        try {
+          await flush();
+          if (api.mode === "demo") {
+            ownsEditor = false;
+            setCanWrite(false);
+            return;
+          }
+          await connection.invoke("ReleaseEditorControl", roomId);
+        } catch (error) {
+          report(error.message);
+        }
+      },
+      async reload() {
+        if (sending) await sending.catch(() => {});
+        clearTimeout(timer);
+        dirty = false;
+        await load();
+        report("Загружена сохранённая версия");
+      },
+      cursor(position) {
+        if (!connected || api.mode === "demo") return;
+        latestCursor = position;
+        if (!cursorTimer)
+          cursorTimer = setTimeout(() => {
+            cursorTimer = undefined;
+            void connection
+              .invoke("UpdateCursor", roomId, {
+                taskId,
+                lineNumber: latestCursor.lineNumber,
+                column: latestCursor.column,
+              })
+              .catch(() => {});
+          }, 200);
+      },
     };
 
     function beforeUnload(event) {
@@ -99,7 +167,7 @@ export function useSharedDocument(api, roomId, taskId, refreshRoom) {
     window.addEventListener("beforeunload", beforeUnload);
 
     async function join() {
-      await connection.invoke("JoinInterview", roomId);
+      controlChanged(await connection.invoke("JoinInterview", roomId));
       // Сначала подписка, потом снимок: поздний участник получает код из БД.
       await load();
       connected = true;
@@ -134,7 +202,7 @@ export function useSharedDocument(api, roomId, taskId, refreshRoom) {
       });
       void load()
         .then(() => {
-          if (!disposed) setReady(true);
+          if (!disposed) { setReady(true); setCanWrite(true); }
           report("Демо · данные в памяти этой вкладки");
         })
         .catch((error) => report(error.message));
@@ -144,6 +212,21 @@ export function useSharedDocument(api, roomId, taskId, refreshRoom) {
         .withAutomaticReconnect()
         .build();
       connection.on("CodeUpdated", receive);
+      connection.on("EditorControlChanged", controlChanged);
+      connection.on("CursorUpdated", (cursor) => {
+        if (cursor.taskId === taskId && !disposed)
+          setPeers((current) => ({
+            ...current,
+            [cursor.connectionId]: cursor,
+          }));
+      });
+      connection.on("PeerLeft", ({ connectionId }) =>
+        setPeers((current) => {
+          const next = { ...current };
+          delete next[connectionId];
+          return next;
+        }),
+      );
       connection.on("AccessRevoked", () => {
         accessRevoked = true;
         connected = false;
@@ -177,6 +260,7 @@ export function useSharedDocument(api, roomId, taskId, refreshRoom) {
       disposed = true;
       clearTimeout(timer);
       clearTimeout(retryTimer);
+      clearTimeout(cursorTimer);
       window.removeEventListener("beforeunload", beforeUnload);
       unsubscribe?.();
       // При переключении задачи сначала отправляем последний набранный фрагмент.
@@ -192,6 +276,13 @@ export function useSharedDocument(api, roomId, taskId, refreshRoom) {
     document,
     status,
     ready,
+    canWrite,
+    editorOwner,
+    peers,
+    takeControl: () => controllerRef.current?.takeControl(),
+    releaseControl: () => controllerRef.current?.releaseControl(),
+    reload: () => controllerRef.current?.reload(),
+    cursor: (position) => controllerRef.current?.cursor(position),
     change: (next) => controllerRef.current?.change(next),
     flush: () => controllerRef.current?.flush(),
   };

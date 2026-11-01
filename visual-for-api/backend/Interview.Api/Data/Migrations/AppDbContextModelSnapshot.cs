@@ -70,7 +70,8 @@ namespace Interview.Api.Data.Migrations
                         .HasColumnType("text");
 
                     b.Property<string>("PhoneNumber")
-                        .HasColumnType("text");
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
 
                     b.Property<bool>("PhoneNumberConfirmed")
                         .HasColumnType("boolean");
@@ -183,8 +184,7 @@ namespace Interview.Api.Data.Migrations
 
                     b.Property<string>("StarterCode")
                         .IsRequired()
-                        .HasMaxLength(20000)
-                        .HasColumnType("character varying(20000)");
+                        .HasColumnType("text");
 
                     b.PrimitiveCollection<string[]>("Tags")
                         .IsRequired()
@@ -241,8 +241,7 @@ namespace Interview.Api.Data.Migrations
 
                     b.Property<string>("Text")
                         .IsRequired()
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)");
+                        .HasColumnType("text");
 
                     b.HasKey("Id");
 
@@ -263,8 +262,7 @@ namespace Interview.Api.Data.Migrations
 
                     b.Property<string>("Code")
                         .IsRequired()
-                        .HasMaxLength(20000)
-                        .HasColumnType("character varying(20000)");
+                        .HasColumnType("text");
 
                     b.Property<string>("Language")
                         .IsRequired()
@@ -297,8 +295,7 @@ namespace Interview.Api.Data.Migrations
 
                     b.Property<string>("Code")
                         .IsRequired()
-                        .HasMaxLength(20000)
-                        .HasColumnType("character varying(20000)");
+                        .HasColumnType("text");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -312,6 +309,9 @@ namespace Interview.Api.Data.Migrations
 
                     b.Property<Guid>("RoomId")
                         .HasColumnType("uuid");
+
+                    b.Property<int?>("SessionSequence")
+                        .HasColumnType("integer");
 
                     b.Property<Guid>("TaskId")
                         .HasColumnType("uuid");
@@ -405,6 +405,9 @@ namespace Interview.Api.Data.Migrations
                     b.Property<int>("DurationMs")
                         .HasColumnType("integer");
 
+                    b.Property<string>("ErrorKind")
+                        .HasColumnType("text");
+
                     b.Property<int>("MemoryKb")
                         .HasColumnType("integer");
 
@@ -443,8 +446,7 @@ namespace Interview.Api.Data.Migrations
 
                     b.Property<string>("Comment")
                         .IsRequired()
-                        .HasMaxLength(5000)
-                        .HasColumnType("character varying(5000)");
+                        .HasColumnType("text");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -507,8 +509,7 @@ namespace Interview.Api.Data.Migrations
 
                     b.Property<string>("Text")
                         .IsRequired()
-                        .HasMaxLength(4000)
-                        .HasColumnType("character varying(4000)");
+                        .HasColumnType("text");
 
                     b.HasKey("Id");
 
@@ -630,16 +631,27 @@ namespace Interview.Api.Data.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<int>("DurationMinutes")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(90);
+
                     b.Property<string>("InterviewerId")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<int>("NextEventSequence")
+                        .HasColumnType("integer");
 
                     b.Property<Guid>("RubricId")
                         .HasColumnType("uuid");
 
                     b.Property<string>("RubricSnapshot")
                         .IsRequired()
-                        .HasColumnType("jsonb");
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("SessionExpiresAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime?>("StartedAt")
                         .HasColumnType("timestamp with time zone");
@@ -664,7 +676,9 @@ namespace Interview.Api.Data.Migrations
 
                     b.ToTable("Interviews", null, t =>
                         {
-                            t.HasCheckConstraint("CK_Room_Status", "\"Status\" IN ('draft','active','completed')");
+                            t.HasCheckConstraint("CK_Room_Duration", "\"DurationMinutes\" BETWEEN 5 AND 240");
+
+                            t.HasCheckConstraint("CK_Room_Status", "\"Status\" IN ('draft','waiting','active','completed')");
                         });
                 });
 
@@ -681,7 +695,7 @@ namespace Interview.Api.Data.Migrations
 
                     b.Property<string>("TaskSnapshot")
                         .IsRequired()
-                        .HasColumnType("jsonb");
+                        .HasColumnType("text");
 
                     b.HasKey("RoomId", "TaskId");
 
@@ -743,6 +757,12 @@ namespace Interview.Api.Data.Migrations
                     b.Property<Guid>("RubricId")
                         .HasColumnType("uuid");
 
+                    b.Property<decimal>("Weight")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(8, 2)
+                        .HasColumnType("numeric(8,2)")
+                        .HasDefaultValue(1m);
+
                     b.HasKey("Id");
 
                     b.HasIndex("RubricId", "Key")
@@ -750,8 +770,59 @@ namespace Interview.Api.Data.Migrations
 
                     b.ToTable("RubricCriteria", t =>
                         {
+                            t.HasCheckConstraint("CK_Criterion_Weight", "\"Weight\" > 0 AND \"Weight\" <= 100");
+
                             t.HasCheckConstraint("CK_Rubric_MaxScore", "\"MaxScore\" BETWEEN 1 AND 100");
                         });
+                });
+
+            modelBuilder.Entity("Interview.Api.Models.SessionEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ActorId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Author")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Payload")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("RoomId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Sequence")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid?>("TaskId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("Visibility")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActorId");
+
+                    b.HasIndex("RoomId", "Sequence")
+                        .IsUnique();
+
+                    b.ToTable("SessionEvents");
                 });
 
             modelBuilder.Entity("Interview.Api.Models.Submission", b =>
@@ -807,16 +878,14 @@ namespace Interview.Api.Data.Migrations
 
                     b.Property<string>("Expected")
                         .IsRequired()
-                        .HasMaxLength(10000)
-                        .HasColumnType("character varying(10000)");
+                        .HasColumnType("text");
 
                     b.Property<bool>("Hidden")
                         .HasColumnType("boolean");
 
                     b.Property<string>("Input")
                         .IsRequired()
-                        .HasMaxLength(10000)
-                        .HasColumnType("character varying(10000)");
+                        .HasColumnType("text");
 
                     b.Property<int>("Position")
                         .HasColumnType("integer");
@@ -911,10 +980,12 @@ namespace Interview.Api.Data.Migrations
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserLogin<string>", b =>
                 {
                     b.Property<string>("LoginProvider")
-                        .HasColumnType("text");
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
 
                     b.Property<string>("ProviderKey")
-                        .HasColumnType("text");
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
 
                     b.Property<string>("ProviderDisplayName")
                         .HasColumnType("text");
@@ -951,10 +1022,12 @@ namespace Interview.Api.Data.Migrations
                         .HasColumnType("text");
 
                     b.Property<string>("LoginProvider")
-                        .HasColumnType("text");
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
 
                     b.Property<string>("Name")
-                        .HasColumnType("text");
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
 
                     b.Property<string>("Value")
                         .HasColumnType("text");
@@ -1186,6 +1259,20 @@ namespace Interview.Api.Data.Migrations
                     b.HasOne("Interview.Api.Models.Rubric", null)
                         .WithMany("Criteria")
                         .HasForeignKey("RubricId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Interview.Api.Models.SessionEvent", b =>
+                {
+                    b.HasOne("Interview.Api.Models.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("ActorId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Interview.Api.Models.Room", null)
+                        .WithMany()
+                        .HasForeignKey("RoomId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

@@ -1,9 +1,8 @@
 import { createDemoApi } from "./demo.jsx";
 
-// Все HTTP-маршруты собраны здесь. React не подключается к БД напрямую.
 export function createApi(mode) {
   if (mode === "demo") return createDemoApi();
-  let csrfToken = "";
+  let csrfToken = ""; // CSRF-токен для cookie-сессии. Получается при первом POST-запросе.
 
   async function request(path, options = {}) {
     const method = options.method ?? "GET";

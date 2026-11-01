@@ -10,7 +10,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Interview.Api.Controllers;
 
 [ApiController, Route("api/rooms/{id:guid}"), Authorize]
-public class SolutionsController(AppDbContext db, AccessService access, DtoService dto, RoomConnections connections, RunService runs) : ControllerBase
+public class SolutionsController(AppDbContext db, AccessService access, DtoService dto, RoomConnections connections, RunService runs, SessionRecorder recorder) : ControllerBase
 {
     [HttpPost("runs")]
     public async Task<object> Run(Guid id, VersionRequest request)
@@ -39,10 +39,10 @@ public class SolutionsController(AppDbContext db, AccessService access, DtoServi
         var existing = await db.Submissions.SingleOrDefaultAsync(x => x.RoomId == id && x.TaskId == request.TaskId && x.CandidateId == actor.Id && x.DocumentVersion == request.DocumentVersion);
         if (existing == null)
         {
-            var verified = await db.Runs.Where(x => x.RoomId == id && x.TaskId == request.TaskId && x.DocumentVersion == document.Version && x.Code == document.Code && x.Language == document.Language && x.Status == "completed" && x.AllPassed)
+            var verified = await db.Runs.Where(x => x.RoomId == id && x.TaskId == request.TaskId && x.DocumentVersion == document.Version && x.Language == document.Language && x.Status == "completed" && x.AllPassed)
                 .OrderByDescending(x => x.CreatedAt).Select(x => (Guid?)x.Id).FirstOrDefaultAsync();
             existing = new Submission { RoomId = id, TaskId = request.TaskId, CandidateId = actor.Id, DocumentVersion = document.Version, Language = document.Language, Code = document.Code, VerifiedRunId = verified };
-            db.Submissions.Add(existing); access.Audit(actor, "solution.submit", existing.Id); await db.SaveChangesAsync();
+            db.Submissions.Add(existing); access.Audit(actor, "solution.submit", existing.Id); await recorder.Append(id, "SolutionSubmitted", actor, new { existing.Id, existing.DocumentVersion }, request.TaskId);
         }
         await transaction.CommitAsync(); await connections.Changed(id);
         return await dto.Room(room, actor);
