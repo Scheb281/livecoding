@@ -1,0 +1,168 @@
+name: visual-interview
+
+x-api: &api
+  image: visual-interview-api:local
+  build:
+    context: .
+    dockerfile: deploy/Dockerfile.api
+  environment:
+    ASPNETCORE_ENVIRONMENT: Production
+    ASPNETCORE_URLS: https://+:8443
+    AllowedHosts: ${DOMAIN:-localhost};api;localhost;127.0.0.1
+    Security__AllowedOrigins__0: https://${DOMAIN:-localhost}
+    Security__TrustedProxies__0: ${WEB_INTERNAL_IP:-172.30.87.10}
+    Runner__BaseUrl: https://runner:8443/
+  secrets:
+    - cluster_ca
+    - tls_password
+    - runner_key
+    - database_connection
+    - database_ca
+    - keyring_password
+    - keyring_certificate
+    - source: api_certificate
+      target: service_certificate
+  volumes:
+    - api_keys:/var/lib/interview/keys
+    - ./.deploy/imported-keys:/imported-keys:ro
+  networks:
+    - application
+
+services:
+  web:
+    image: visual-interview-web:local
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.web
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    ports:
+      - '${HTTP_PORT:-80}:80'
+      - '${HTTPS_PORT:-443}:443'
+      - '${HTTPS_PORT:-443}:443/udp'
+    secrets:
+      - cluster_ca
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      application:
+        ipv4_address: ${WEB_INTERNAL_IP:-172.30.87.10}
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  api:
+    <<: *api
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      runner:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'curl', '--fail', '--silent', '--cacert', '/run/secrets/cluster_ca', 'https://api:8443/health/ready']
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+    restart: unless-stopped
+
+  migrate:
+    <<: *api
+    command: ['dotnet', 'Interview.Api.dll', '--migrate']
+    restart: 'no'
+
+  runner:
+    image: visual-interview-runner:local
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.runner
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: https://+:8443
+      Runner__SandboxImage: visual-interview-sandbox:local
+    secrets:
+      - cluster_ca
+      - tls_password
+      - runner_key
+      - source: runner_certificate
+        target: service_certificate
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - application
+    healthcheck:
+      test: ['CMD', 'curl', '--fail', '--silent', '--cacert', '/run/secrets/cluster_ca', 'https://runner:8443/health/live']
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 10s
+    restart: unless-stopped
+
+  setup:
+    profiles: ['tools']
+    build: ./deploy/setup
+    user: '${LOCAL_UID:-0}:${LOCAL_GID:-0}'
+    volumes:
+      - ./.deploy:/generated
+    network_mode: none
+
+  sandbox:
+    profiles: ['tools']
+    image: visual-interview-sandbox:local
+    build: ./backend/Interview.Runner/sandbox
+    network_mode: none
+
+  bootstrap:
+    <<: *api
+    profiles: ['tools']
+    command: ['dotnet', 'Interview.Api.dll', '--bootstrap-admin']
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Bootstrap__Email: ${ADMIN_EMAIL:-}
+      Bootstrap__Name: ${ADMIN_NAME:-Администратор}
+    secrets:
+      - cluster_ca
+      - tls_password
+      - runner_key
+      - database_connection
+      - database_ca
+      - keyring_password
+      - keyring_certificate
+      - bootstrap_password
+      - source: api_certificate
+        target: service_certificate
+
+networks:
+  application:
+    ipam:
+      config:
+        - subnet: ${APP_SUBNET:-172.30.87.0/24}
+
+volumes:
+  api_keys:
+  caddy_data:
+  caddy_config:
+
+secrets:
+  cluster_ca:
+    file: ./.deploy/ca.crt
+  tls_password:
+    file: ./.deploy/tls_password
+  runner_key:
+    file: ./.deploy/runner_key
+  database_connection:
+    file: ./.deploy/database_connection
+  database_ca:
+    file: ./.deploy/database_ca.crt
+  keyring_password:
+    file: ./.deploy/keyring_password
+  keyring_certificate:
+    file: ./.deploy/keyring.pfx
+  api_certificate:
+    file: ./.deploy/api.pfx
+  runner_certificate:
+    file: ./.deploy/runner.pfx
+  bootstrap_password:
+    file: ./.deploy/bootstrap_password

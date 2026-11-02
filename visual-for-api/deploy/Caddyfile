@@ -1,0 +1,24 @@
+{$DOMAIN} {
+    encode zstd gzip
+    @backend path /api/* /hubs/* /health/*
+    handle @backend {
+        reverse_proxy https://api:8443 {
+            header_up Host {http.request.hostport}
+            transport http {
+                tls_trust_pool file /run/secrets/cluster_ca
+            }
+        }
+    }
+    handle {
+        root * /srv
+        # Отсутствующий JS-файл не должен подменяться index.html.
+        @assets path /assets/* /monaco/*
+        handle @assets {
+            file_server
+        }
+        handle {
+            try_files {path} /index.html
+            file_server
+        }
+    }
+}

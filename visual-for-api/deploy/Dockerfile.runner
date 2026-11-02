@@ -1,0 +1,21 @@
+FROM mcr.microsoft.com/dotnet/sdk:10.0-noble AS build
+WORKDIR /src
+COPY backend/global.json ./global.json
+COPY backend/Interview.Runner/Interview.Runner.csproj Interview.Runner/
+RUN dotnet restore Interview.Runner/Interview.Runner.csproj
+COPY backend/Interview.Runner/ Interview.Runner/
+RUN dotnet publish Interview.Runner/Interview.Runner.csproj --configuration Release --no-restore --output /app
+
+FROM docker:29-cli AS docker-cli
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble
+RUN apt-get update && apt-get install --yes --no-install-recommends ca-certificates curl gosu \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
+WORKDIR /app
+COPY --from=build /app/ ./
+COPY deploy/dotnet-entrypoint.sh /usr/local/bin/interview-entrypoint
+RUN chmod 0555 /usr/local/bin/interview-entrypoint
+ENV ASPNETCORE_ENVIRONMENT=Production ASPNETCORE_URLS=https://+:8443
+EXPOSE 8443
+ENTRYPOINT ["interview-entrypoint"]
+CMD ["dotnet", "Interview.Runner.dll"]

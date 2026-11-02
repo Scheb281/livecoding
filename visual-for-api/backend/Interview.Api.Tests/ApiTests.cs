@@ -14,6 +14,58 @@ namespace Interview.Api.Tests;
 
 public class ApiTests
 {
+    [Fact]
+    public async Task Anonymous_Invitations_Create_Separate_Guests_Without_Email_Or_Password()
+    {
+        await using var factory = new ApiFactory();
+        await factory.Initialize();
+        var firstRoom = await Prepare(factory);
+        var secondRoom = await Prepare(factory);
+        using var firstGuest = factory.Session();
+        using var secondGuest = factory.Session();
+
+        var first = await firstGuest.Post("/api/invitations/redeem", new { token = firstRoom.Token, name = "Первый гость" });
+        var second = await secondGuest.Post("/api/invitations/redeem", new { token = secondRoom.Token, name = "Второй гость" });
+        var firstUser = first.GetProperty("user");
+        var secondUser = second.GetProperty("user");
+        Assert.Equal("candidate", firstUser.GetProperty("role").GetString());
+        Assert.Equal("", firstUser.GetProperty("email").GetString());
+        Assert.NotEqual(firstUser.GetProperty("id").GetString(), secondUser.GetProperty("id").GetString());
+        Assert.Equal(firstRoom.RoomId, first.GetProperty("roomId").GetGuid());
+        Assert.Equal(firstUser.GetProperty("id").GetString(), (await firstGuest.Get("/api/auth/me")).GetProperty("user").GetProperty("id").GetString());
+
+        var room = await firstGuest.Get($"/api/rooms/{firstRoom.RoomId}");
+        Assert.DoesNotContain("PRIVATE_INPUT", room.GetRawText());
+        Assert.Equal(HttpStatusCode.Forbidden, (await firstGuest.Send(HttpMethod.Get, "/api/admin/users")).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await firstGuest.Send(HttpMethod.Post, "/api/invitations/redeem", new { token = firstRoom.Token, name = "Повтор" })).StatusCode);
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var ids = new[] { firstUser.GetProperty("id").GetString(), secondUser.GetProperty("id").GetString() };
+        var guests = await db.Users.Where(user => ids.Contains(user.Id)).ToListAsync();
+        Assert.Equal(2, guests.Count);
+        Assert.All(guests, user => { Assert.Null(user.Email); Assert.Null(user.NormalizedEmail); Assert.Null(user.PasswordHash); });
+    }
+
+    [Fact]
+    public async Task Guest_Exception_Preserves_Identity_Email_Validation_For_Other_Accounts()
+    {
+        await using var factory = new ApiFactory();
+        await factory.Initialize();
+        using var scope = factory.Services.CreateScope();
+        var users = scope.ServiceProvider.GetRequiredService<Microsoft.AspNetCore.Identity.UserManager<Interview.Api.Models.AppUser>>();
+        Assert.True(users.Options.User.RequireUniqueEmail);
+
+        var invalid = await users.CreateAsync(new() { UserName = "invalid@example.test", Email = "invalid-email", Role = "candidate" });
+        Assert.Contains(invalid.Errors, error => error.Code == "InvalidEmail");
+        var duplicate = await users.CreateAsync(new() { UserName = "different@example.test", Email = "interviewer@example.test", Role = "candidate" });
+        Assert.Contains(duplicate.Errors, error => error.Code == "DuplicateEmail");
+        var staffWithoutEmail = await users.CreateAsync(new() { UserName = "guest-" + Guid.NewGuid().ToString("N"), Role = "admin" });
+        Assert.Contains(staffWithoutEmail.Errors, error => error.Code == "InvalidEmail");
+        var passwordWithoutEmail = await users.CreateAsync(new() { UserName = "guest-" + Guid.NewGuid().ToString("N"), Role = "candidate" }, "TestPassword123!");
+        Assert.Contains(passwordWithoutEmail.Errors, error => error.Code == "InvalidEmail");
+    }
+
     private static async Task<(Guid RoomId, Guid TaskId, Guid RubricId, string Token)> Prepare(ApiFactory factory)
     {
         using var lead = factory.Session(); await lead.Login("teamlead");

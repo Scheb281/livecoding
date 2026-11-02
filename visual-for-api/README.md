@@ -1,5 +1,7 @@
 # interview. — технические интервью
 
+Развёртывание на Linux: [Docker Compose, HTTPS, БД и перенос существующих данных](docs/LINUX_DOCKER.md).
+
 React + Monaco + ASP.NET 10 + SignalR + EF Core/Npgsql.
 
 Роли: кандидат, интервьюер, тимлид, администратор. Реализованы банк задач,
@@ -64,3 +66,5 @@ API содержит очередь, квоты и адаптер собстве
 
 
 - [Как работают все классы и методы API](docs/API_CLASSES_AND_METHODS.md)
+
+- [Подключение Yandex Cloud PostgreSQL](docs/YANDEX_DATABASE.md)

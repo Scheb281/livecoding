@@ -1,0 +1,50 @@
+# Этот файл добавляет PostgreSQL в Docker. Для Yandex Cloud он не нужен.
+services:
+  db:
+    image: visual-interview-postgres:local
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.database
+    environment:
+      POSTGRES_DB: interview
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/database_admin_password
+      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+    secrets:
+      - database_password
+      - database_admin_password
+      - source: database_certificate
+        target: database_certificate
+      - source: database_key
+        target: database_key
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - application
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -h 127.0.0.1 -U postgres -d interview']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+  migrate:
+    depends_on:
+      db:
+        condition: service_healthy
+  bootstrap:
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+
+secrets:
+  database_password:
+    file: ./.deploy/database_password
+  database_admin_password:
+    file: ./.deploy/database_admin_password
+  database_certificate:
+    file: ./.deploy/db.crt
+  database_key:
+    file: ./.deploy/db.key

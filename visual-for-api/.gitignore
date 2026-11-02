@@ -27,3 +27,7 @@ dist-ssr
 *.pfx
 *.key
 .keys/
+.deploy/
+.env
+.env.*
+!.env.example

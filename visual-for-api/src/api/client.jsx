@@ -8,7 +8,7 @@ export function createApi(mode) {
     const method = options.method ?? "GET";
     if (method !== "GET" && !csrfToken) {
       const response = await fetch("/api/auth/csrf", {
-        credentials: "include",
+        credentials: "include", //Опция "include" принудительно заставляет браузер включить куки сессии в этот запрос, а также разрешает браузеру сохранить новые куки, которые сервер пришлет в ответ
       });
       if (!response.ok)
         throw new Error(
@@ -19,7 +19,7 @@ export function createApi(mode) {
     const response = await fetch(`/api${path}`, {
       method,
       credentials: "include",
-      signal: options.signal,
+      signal: options.signal, //позволяет отсоеденить запрос
       headers: {
         Accept: "application/json",
         ...(options.body !== undefined

@@ -1,0 +1,11 @@
+**/bin/
+**/obj/
+**/TestResults/
+*.log
+*.db
+.env
+.keys/
+appsettings.Production.json
+**/*.pfx
+**/*.key
+**/sandbox-build.log

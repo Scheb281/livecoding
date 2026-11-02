@@ -1,0 +1,6 @@
+FROM postgres:17
+COPY deploy/postgres-entrypoint.sh /usr/local/bin/interview-postgres
+COPY deploy/postgres-init.sh /docker-entrypoint-initdb.d/010-interview-user.sh
+RUN chmod 0555 /usr/local/bin/interview-postgres /docker-entrypoint-initdb.d/010-interview-user.sh
+ENTRYPOINT ["interview-postgres"]
+CMD ["postgres", "-c", "ssl=on", "-c", "ssl_cert_file=/tmp/interview-tls/server.crt", "-c", "ssl_key_file=/tmp/interview-tls/server.key"]

@@ -1,7 +1,8 @@
 import { useState } from "react";
+import Editor from "@monaco-editor/react";
 import { languages } from "../api/languages.jsx";
 import { useAction } from "../hooks/useResource.jsx";
-import { ActionState } from "./Common.jsx";
+import { ActionState, Notice } from "./Common.jsx";
 
 const blankTask = {
   title: "",
@@ -20,9 +21,11 @@ const blankTask = {
 export default function TaskForm({ api, task, onSaved, onCancel }) {
   const [form, setForm] = useState(() => structuredClone(task ?? blankTask));
   const [tagsText, setTagsText] = useState(task?.tags.join(", ") ?? "");
+  const [starterCodeError, setStarterCodeError] = useState("");
   const action = useAction();
   function change(name, value) {
     setForm((current) => ({ ...current, [name]: value }));
+    if (name === "starterCode") setStarterCodeError("");
   }
   function changeTest(index, name, value) {
     change(
@@ -34,6 +37,11 @@ export default function TaskForm({ api, task, onSaved, onCancel }) {
   }
   async function save(event) {
     event.preventDefault();
+    // Monaco не поддерживает HTML required, поэтому проверяем код перед запросом.
+    if (!form.starterCode.trim() || form.starterCode.length > 20000) {
+      setStarterCodeError("Добавьте стартовый код длиной до 20 000 символов.");
+      return;
+    }
     const tags = [
       ...new Set(
         tagsText
@@ -140,6 +148,7 @@ export default function TaskForm({ api, task, onSaved, onCancel }) {
           onChange={(event) => {
             // Шаблон меняется вместе с языком только по явному выбору автора задачи.
             const language = event.target.value;
+            setStarterCodeError("");
             setForm((current) => ({
               ...current,
               language,
@@ -152,16 +161,31 @@ export default function TaskForm({ api, task, onSaved, onCancel }) {
           ))}
         </select>
       </label>
-      <label>
-        Стартовый код
-        <textarea
-          className="code-input"
-          rows={9}
-          required
-          value={form.starterCode}
-          onChange={(event) => change("starterCode", event.target.value)}
-        />
-      </label>
+      <div className="stack">
+        <span>Стартовый код</span>
+        <div className="starter-code-editor">
+          <Editor
+            height="340px"
+            theme="vs-dark"
+            language={languages[form.language]?.id ?? "plaintext"}
+            value={form.starterCode}
+            loading="Загрузка редактора…"
+            onChange={(value) => change("starterCode", value ?? "")}
+            options={{
+              ariaLabel: "Стартовый код",
+              automaticLayout: true,
+              minimap: { enabled: false },
+              fontSize: 14,
+              tabSize: 4,
+              insertSpaces: true,
+              detectIndentation: false,
+              scrollBeyondLastLine: false,
+              padding: { top: 12, bottom: 12 },
+            }}
+          />
+        </div>
+        <Notice error>{starterCodeError}</Notice>
+      </div>
       <div className="section-heading">
         <h3>Тесты</h3>
         <button

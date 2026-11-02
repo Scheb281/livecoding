@@ -146,6 +146,12 @@ pre,
 pre {
   line-height: 1.6;
 }
+.starter-code-editor {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #353d4a;
+  border-radius: 8px;
+}
 .sr-only {
   position: absolute;
   width: 1px;

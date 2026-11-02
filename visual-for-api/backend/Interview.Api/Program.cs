@@ -14,8 +14,11 @@ using Microsoft.AspNetCore.DataProtection;
 using System.Security.Cryptography.X509Certificates;
 using Microsoft.AspNetCore.HttpOverrides;
 using System.Net;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
-var builder = WebApplication.CreateBuilder(args);
+// Команды обслуживания — флаги, а не пары «ключ/значение» конфигурации.
+var maintenanceCommands = new[] { "--migrate", "--bootstrap-admin", "--encrypt-existing-data", "--create-keyring-certificate", "--export-keyring", "--check-keyring" };
+var builder = WebApplication.CreateBuilder(args.Where(argument => !maintenanceCommands.Contains(argument)).ToArray());
 if (args.Contains("--create-keyring-certificate")) { KeyringCertificate.Create(builder.Configuration); return; }
 
 // Один и тот же долговечный key ring нужен cookie и зашифрованным полям БД.
@@ -73,6 +76,8 @@ builder.Services.AddIdentity<AppUser, IdentityRole>(options =>
     options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
     options.Stores.SchemaVersion = IdentitySchemaVersions.Version2;
 }).AddEntityFrameworkStores<AppDbContext>().AddDefaultTokenProviders();
+// Заменяем стандартный валидатор, чтобы приглашённый гость мог войти без email.
+builder.Services.Replace(ServiceDescriptor.Scoped<IUserValidator<AppUser>, GuestUserValidator>());
 builder.Services.ConfigureApplicationCookie(options =>
 {
     options.Cookie.Name = "interview.session";
@@ -134,6 +139,9 @@ builder.Services.AddRateLimiter(options =>
 });
 
 var app = builder.Build();
+// Экспорт и проверка ключей не запускают сервер и не обращаются к рабочей БД.
+if (args.Contains("--export-keyring")) { KeyringExport.Run(app.Services, app.Configuration); return; }
+if (args.Contains("--check-keyring")) { KeyringExport.Verify(app.Services, app.Configuration); return; }
 if (trustedProxies.Length > 0) app.UseForwardedHeaders();
 if (!app.Environment.IsDevelopment() && !app.Environment.IsEnvironment("Testing"))
 {
