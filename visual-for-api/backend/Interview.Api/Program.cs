@@ -16,12 +16,12 @@ using Microsoft.AspNetCore.HttpOverrides;
 using System.Net;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-// Команды обслуживания — флаги, а не пары «ключ/значение» конфигурации.
+//команды обслуживания флаги, а не пары «ключ/значение» конфигурации
 var maintenanceCommands = new[] { "--migrate", "--bootstrap-admin", "--encrypt-existing-data", "--create-keyring-certificate", "--export-keyring", "--check-keyring" };
 var builder = WebApplication.CreateBuilder(args.Where(argument => !maintenanceCommands.Contains(argument)).ToArray());
 if (args.Contains("--create-keyring-certificate")) { KeyringCertificate.Create(builder.Configuration); return; }
 
-// Один и тот же долговечный key ring нужен cookie и зашифрованным полям БД.
+//один и тот же долговечный key ring нужен cookie и зашифрованным полям БД
 
 var keyDirectory = builder.Configuration["Security:KeysDirectory"] ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "visual-interview", "keys");
 
@@ -50,7 +50,8 @@ if (trustedProxies.Length > 0) builder.Services.Configure<ForwardedHeadersOption
     options.KnownIPNetworks.Clear();
     foreach (var proxy in trustedProxies)
     {
-        if (!IPAddress.TryParse(proxy, out var address)) throw new InvalidOperationException("TrustedProxies принимает только явные IP-адреса доверенного reverse proxy.");
+        if (!IPAddress.TryParse(proxy, out var address)) 
+            throw new InvalidOperationException("TrustedProxies принимает только явные IP-адреса доверенного reverse proxy.");
         options.KnownIPNetworks.Add(new System.Net.IPNetwork(address, address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork ? 32 : 128));
     }
 });
@@ -62,8 +63,10 @@ var connection = builder.Configuration.GetConnectionString("Database");
 if (string.IsNullOrWhiteSpace(connection) && !builder.Environment.IsEnvironment("Testing"))
     throw new InvalidOperationException("Задайте ConnectionStrings:Database через dotnet user-secrets или ConnectionStrings__Database. Затем выполните dotnet run -- --migrate.");
 
-builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(connection ?? "Host=localhost;Database=interview;Username=postgres"));
+builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(connection));
 
+
+//нужен для управления структурами в базе данных, чтобы они нормально работали
 builder.Services.AddIdentity<AppUser, IdentityRole>(options =>
 {
     options.User.RequireUniqueEmail = true;
@@ -76,24 +79,37 @@ builder.Services.AddIdentity<AppUser, IdentityRole>(options =>
     options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
     options.Stores.SchemaVersion = IdentitySchemaVersions.Version2;
 }).AddEntityFrameworkStores<AppDbContext>().AddDefaultTokenProviders();
-// Заменяем стандартный валидатор, чтобы приглашённый гость мог войти без email.
+
+//заменяем стандартный валидатор, чтобы приглашённый гость мог войти без email
+//изначально вся валидация строгая. Этой строчкой мы заменяем его на более мягкий
 builder.Services.Replace(ServiceDescriptor.Scoped<IUserValidator<AppUser>, GuestUserValidator>());
+//настраиваем куки для проекта
 builder.Services.ConfigureApplicationCookie(options =>
 {
+    //заменяем имя куки 
     options.Cookie.Name = "interview.session";
+    //этой строчкой запрещаем обращаться к кукам через js код, для защиты от xxs атак или кражи куки
     options.Cookie.HttpOnly = true;
+    //предотвращает CSRF-атаки, грубо говоря запрещает отправлять запросы на POST, UPDATE, DELETE и тд без предоставления CSRF ключа
+    //CSRF-ключ - это ключ, который прикрепляется к сессии через куки-файл на компьютере и при запросах он всегда сверяется с браузером и если ключ валиден, то пропускает этот запрос
     options.Cookie.SameSite = SameSiteMode.Lax;
+    //указывает, что куки надо передавать только по защищеному https протоколу
     options.Cookie.SecurePolicy = builder.Environment.IsDevelopment() || builder.Environment.IsEnvironment("Testing") ? CookieSecurePolicy.SameAsRequest : CookieSecurePolicy.Always;
+    //время хранения куки
     options.ExpireTimeSpan = TimeSpan.FromHours(8);
+    //значит, что в любом случае удалится кука, даже если пользователь на сайте 
     options.SlidingExpiration = false;
+    //всегда выдает только чистый код, а не html страничку
     options.Events.OnRedirectToLogin = context => { context.Response.StatusCode = 401; return Task.CompletedTask; };
     options.Events.OnRedirectToAccessDenied = context => { context.Response.StatusCode = 403; return Task.CompletedTask; };
+    //это хук, который всегда срабатывает при обработке пользователя
     options.Events.OnValidatePrincipal = async context =>
     {
         var manager = context.HttpContext.RequestServices.GetRequiredService<UserManager<AppUser>>();
         var account = await manager.GetUserAsync(context.Principal!);
         var stamp = context.Principal!.FindFirstValue("AspNet.Identity.SecurityStamp");
-        if (account is not { IsActive: true } || account.SecurityStamp != stamp) context.RejectPrincipal();
+        if (account is not { IsActive: true } || account.SecurityStamp != stamp)
+            context.RejectPrincipal();
     };
 });
 builder.Services.AddAntiforgery(options =>

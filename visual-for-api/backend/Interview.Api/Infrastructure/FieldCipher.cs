@@ -10,6 +10,6 @@ public sealed class FieldCipher(IDataProtectionProvider provider)
     public string Encrypt(string value) => Prefix + protector.Protect(value);
 
     // Старые строки читаются до выполнения явной команды --encrypt-existing-data.
-    public string Decrypt(string value) => value.StartsWith(Prefix, StringComparison.Ordinal)
-        ? protector.Unprotect(value[Prefix.Length..]) : value;
+    public string Decrypt(string value) => value.StartsWith(Prefix, StringComparison.Ordinal/*побайтого*/) 
+        ? protector.Unprotect(value[Prefix.Length..]/*срез для того чтобы отрезать префикс*/) : value;
 }
