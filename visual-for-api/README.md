@@ -1,5 +1,15 @@
 # interview. — технические интервью
 
+чтобы запустить приложение если нет sln
+dotnet restore backend/Interview.sln
+
+bash deploy/setup.sh
+ы
+в .env
+COMPOSE_FILE=compose.yml:compose.postgres.yml
+COMPOSE_PATH_SEPARATOR=:
+DOMAIN=interview.example.com
+
 Развёртывание на Linux: [Docker Compose, HTTPS, БД и перенос существующих данных](docs/LINUX_DOCKER.md).
 
 React + Monaco + ASP.NET 10 + SignalR + EF Core/Npgsql.

@@ -3,8 +3,6 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { registerHooks } from "node:module";
 
-// API-файлы переименованы в .jsx, но содержат обычный JavaScript без JSX-разметки.
-// Этот загрузчик нужен только Node-тестам; Vite обрабатывает расширение самостоятельно.
 registerHooks({
   load(url, context, nextLoad) {
     if (url.endsWith("/api/demo.jsx") || url.endsWith("/api/languages.jsx")) {
