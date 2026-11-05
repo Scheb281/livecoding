@@ -1,0 +1,14 @@
+FROM node:24-bookworm-slim AS build
+WORKDIR /src
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY index.html vite.config.js ./
+COPY public/ public/
+COPY src/ src/
+RUN npm run build
+
+FROM caddy:2
+COPY --from=build /src/dist/ /srv/
+# Monaco загружается с этого же сервера, внешняя CDN в production не нужна.
+# Vite скопировал Monaco в dist/monaco: внешняя CDN в production не нужна.
+COPY deploy/Caddyfile /etc/caddy/Caddyfile

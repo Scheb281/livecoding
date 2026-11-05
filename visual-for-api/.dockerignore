@@ -1,0 +1,17 @@
+**/node_modules
+**/bin
+**/obj
+**/.vs
+.git
+.vite-cache
+dist
+.deploy
+.env
+.env.*
+!.env.example
+**/*.log
+**/*.pfx
+**/*.key
+**/secrets.json
+outputs
+work
