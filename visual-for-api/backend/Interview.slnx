@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="Interview.Api.Tests/Interview.Api.Tests.csproj" />
+  <Project Path="Interview.Api/Interview.Api.csproj" />
+  <Project Path="Interview.DatabaseSetup/Interview.DatabaseSetup.csproj" />
+  <Project Path="Interview.Runner/Interview.Runner.csproj" />
+</Solution>

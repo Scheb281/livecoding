@@ -30,7 +30,8 @@ public class InterviewHub(AppDbContext db, AccessService access, RoomConnections
         {
             ApiError.Require(update != null && update.Code != null && update.Code.Length <= 20000 && DtoService.Languages.Contains(update.Language)
                 && update.MutationId != Guid.Empty && update.BaseVersion >= 0, "Некорректное изменение кода.");
-            var actor = await access.Actor(Context.User!); AccessService.Role(actor, "candidate", "interviewer");
+            var actor = await access.Actor(Context.User!);
+            AccessService.Role(actor, "candidate", "interviewer");
             await connections.CheckWriter(Context.ConnectionId, actor.Id, roomId);
             await using var transaction = await db.Database.BeginTransactionAsync();
             await DatabaseLocks.Acquire(db, "room:" + roomId);
@@ -62,8 +63,14 @@ public class InterviewHub(AppDbContext db, AccessService access, RoomConnections
             await Clients.OthersInGroup(RoomConnections.Group(roomId)).SendAsync("CodeUpdated", result);
             return result;
         }
-        catch (ApiError error) { throw new HubException(error.Message); }
-        catch (DbUpdateConcurrencyException) { throw new HubException("Версия кода изменилась. Не затирайте чужие изменения."); }
+        catch (ApiError error) 
+        { 
+            throw new HubException(error.Message);
+        }
+        catch (DbUpdateConcurrencyException) 
+        { 
+            throw new HubException("Версия кода изменилась. Не затирайте чужие изменения."); 
+        }
     }
 
     public async Task<EditorControl> TakeEditorControl(Guid roomId)

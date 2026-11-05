@@ -112,6 +112,7 @@ builder.Services.ConfigureApplicationCookie(options =>
             context.RejectPrincipal();
     };
 });
+//настраивает ключ csrf
 builder.Services.AddAntiforgery(options =>
 {
     options.HeaderName = "X-CSRF-Token";
@@ -122,7 +123,9 @@ builder.Services.AddAntiforgery(options =>
 builder.Services.AddAuthorization();
 builder.Services.AddScoped<CsrfFilter>();
 builder.Services.AddControllers(options => options.Filters.Add<CsrfFilter>());
+//реализация сокета, максимум можно отправить 256 килобайт
 builder.Services.AddSignalR(options => { options.MaximumReceiveMessageSize = 256 * 1024; options.EnableDetailedErrors = false; });
+//региструем объекты и время жизни их в работе
 builder.Services.AddScoped<AccessService>();
 builder.Services.AddScoped<DtoService>();
 builder.Services.AddScoped<RunService>();
@@ -136,7 +139,8 @@ builder.Services.AddHttpClient("runner", client =>
     if (!string.IsNullOrWhiteSpace(baseUrl))
     {
         var uri = new Uri(baseUrl.TrimEnd('/') + "/", UriKind.Absolute);
-        if (uri.Scheme is not ("http" or "https")) throw new InvalidOperationException("Runner:BaseUrl должен быть HTTP(S)-адресом собственного sandbox-сервиса.");
+        if (uri.Scheme is not ("http" or "https")) 
+            throw new InvalidOperationException("Runner:BaseUrl должен быть HTTP(S)-адресом собственного sandbox-сервиса.");
         if (!builder.Environment.IsDevelopment() && !builder.Environment.IsEnvironment("Testing") && uri.Scheme != "https")
             throw new InvalidOperationException("В production соединение API с runner должно использовать HTTPS.");
         client.BaseAddress = uri;
@@ -156,9 +160,17 @@ builder.Services.AddRateLimiter(options =>
 
 var app = builder.Build();
 // Экспорт и проверка ключей не запускают сервер и не обращаются к рабочей БД.
-if (args.Contains("--export-keyring")) { KeyringExport.Run(app.Services, app.Configuration); return; }
-if (args.Contains("--check-keyring")) { KeyringExport.Verify(app.Services, app.Configuration); return; }
-if (trustedProxies.Length > 0) app.UseForwardedHeaders();
+if (args.Contains("--export-keyring")) {
+    KeyringExport.Run(app.Services, app.Configuration);
+    return;
+}
+if (args.Contains("--check-keyring")) {
+    KeyringExport.Verify(app.Services, app.Configuration);
+    return;
+}
+if (trustedProxies.Length > 0) 
+    app.UseForwardedHeaders();
+
 if (!app.Environment.IsDevelopment() && !app.Environment.IsEnvironment("Testing"))
 {
     app.UseHsts();
@@ -168,9 +180,13 @@ app.Use(async (context, next) =>
 {
     context.Response.Headers["X-Content-Type-Options"] = "nosniff";
     context.Response.Headers["Referrer-Policy"] = "no-referrer";
-    if (!context.Request.Path.Equals("/api/auth/csrf")) context.Response.Headers.CacheControl = "no-store";
-    try { await next(); }
-    catch (Exception error) when (!context.Response.HasStarted)
+    if (!context.Request.Path.Equals("/api/auth/csrf")) 
+        context.Response.Headers.CacheControl = "no-store";
+    try { 
+        await next();
+    }
+    catch (Exception error) 
+    when (!context.Response.HasStarted)
     {
         var (status, detail) = error switch
         {
@@ -179,7 +195,8 @@ app.Use(async (context, next) =>
             DbUpdateException update when update.InnerException is Npgsql.PostgresException postgres && postgres.SqlState == "23505" => (409, "Такая запись уже существует."),
             _ => (500, "Не удалось обработать запрос. Проверьте доступность базы и журнал сервера.")
         };
-        if (status == 500) app.Logger.LogError(error, "Ошибка API");
+        if (status == 500) 
+            app.Logger.LogError(error, "Ошибка API");
         context.Response.StatusCode = status;
         await context.Response.WriteAsJsonAsync(new { detail });
     }
@@ -194,7 +211,10 @@ app.Use(async (context, next) =>
         var sameOrigin = $"{context.Request.Scheme}://{context.Request.Host}";
         if ((origin.Length > 0 && origin != sameOrigin && !allowed.Contains(origin, StringComparer.OrdinalIgnoreCase))
             || (context.WebSockets.IsWebSocketRequest && origin.Length == 0))
-        { context.Response.StatusCode = 403; return; }
+        { 
+            context.Response.StatusCode = 403;
+            return;
+        }
     }
     await next();
 });
@@ -210,10 +230,14 @@ app.MapGet("/health/ready", async (AppDbContext db) => await db.Database.CanConn
 if (!app.Environment.IsEnvironment("Testing"))
 {
     using var scope = app.Services.CreateScope();
-    if (args.Contains("--migrate")) await scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.MigrateAsync();
+    if (args.Contains("--migrate")) 
+        await scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.MigrateAsync();
     await DatabaseSetup.SeedRoles(scope.ServiceProvider);
-    if (args.Contains("--bootstrap-admin")) await DatabaseSetup.BootstrapAdmin(scope.ServiceProvider, app.Configuration);
-    if (args.Contains("--encrypt-existing-data")) await EncryptionBackfill.Run(scope.ServiceProvider.GetRequiredService<AppDbContext>());
-    if (args.Contains("--migrate") || args.Contains("--bootstrap-admin") || args.Contains("--encrypt-existing-data")) return;
+    if (args.Contains("--bootstrap-admin")) 
+        await DatabaseSetup.BootstrapAdmin(scope.ServiceProvider, app.Configuration);
+    if (args.Contains("--encrypt-existing-data")) 
+        await EncryptionBackfill.Run(scope.ServiceProvider.GetRequiredService<AppDbContext>());
+    if (args.Contains("--migrate") || args.Contains("--bootstrap-admin") || args.Contains("--encrypt-existing-data")) 
+        return;
 }
 await app.RunAsync();

@@ -67,10 +67,23 @@ public sealed class DockerSandbox(IConfiguration config)
         catch (Exception error) when (error is EndOfStreamException or JsonException) { return new(test.Position, "Процесс завершён лимитом памяти или ресурсов.", -1, false, 0, 0, "resource"); }
         finally
         {
-            if (attach != null) { try { if (!attach.HasExited) attach.Kill(true); } catch (InvalidOperationException) { } attach.Dispose(); }
+            if (attach != null) { 
+                try 
+                { 
+                    if (!attach.HasExited) 
+                        attach.Kill(true);
+                } catch (InvalidOperationException) { }
+                attach.Dispose();
+            }
             // Cleanup выполняется даже при отмене HTTP-запроса. В контейнер нет host-монтов.
             using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-            try { await Command(["rm", "--force", name], cleanup.Token); } catch { /* имя содержит только локальный GUID; orphan-очистка описана в README */ }
+            try
+            {
+                await Command(["rm", "--force", name], cleanup.Token);
+            }
+            catch (Exception) 
+            {
+            }
         }
     }
 

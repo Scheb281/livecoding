@@ -8,7 +8,7 @@ namespace Interview.Api.Services;
 
 public sealed class AccessService(AppDbContext db)
 {
-    // Читаем роль и активность из БД: браузер не может назначить себе права.
+    //просто реализуем все запросы к бд и добавляем им время жизни
     public async Task<AppUser> Actor(ClaimsPrincipal principal)
     {
         var id = principal.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -28,8 +28,11 @@ public sealed class AccessService(AppDbContext db)
         return room;
     }
 
-    public static bool Expired(Room room) => room.SessionExpiresAt.HasValue && room.SessionExpiresAt <= DateTime.UtcNow;
-    public static void Active(Room room) => ApiError.Require(room.Status == "active" && !Expired(room), "Интервью завершено или время сессии истекло.", 409);
+    public static bool Expired(Room room) => 
+        room.SessionExpiresAt.HasValue &&
+        room.SessionExpiresAt <= DateTime.UtcNow;
+    public static void Active(Room room) =>
+        ApiError.Require(room.Status == "active" && !Expired(room), "Интервью завершено или время сессии истекло.", 409);
     public static void Invitable(Room room) => ApiError.Require(room.Status is "waiting" or "active" && !Expired(room), "Комната не открыта или время сессии истекло.", 409);
 
     public async Task<Room> RecordingRoom(AppUser actor, Guid id) => actor.Role is "admin" or "teamlead"
@@ -39,11 +42,12 @@ public sealed class AccessService(AppDbContext db)
         await db.Documents.SingleOrDefaultAsync(x => x.RoomId == roomId && x.TaskId == taskId)
         ?? throw new ApiError(404, "Задача не назначена этой комнате.");
 
-    public void Audit(AppUser? actor, string action, object? entityId = null) => db.Audit.Add(new AuditEvent
-    {
-        ActorId = actor?.Id,
-        Actor = actor?.DisplayName ?? "Система",
-        Action = action,
-        EntityId = entityId?.ToString()
-    });
+    public void Audit(AppUser? actor, string action, object? entityId = null) => 
+        db.Audit.Add(new AuditEvent
+        {
+            ActorId = actor?.Id,
+            Actor = actor?.DisplayName ?? "Система",
+            Action = action,
+            EntityId = entityId?.ToString()
+        });
 }

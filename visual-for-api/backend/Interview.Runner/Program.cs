@@ -40,7 +40,8 @@ public class RunnerProgram
 public record SandboxJob(Guid RunId, string Language, string Code, int TimeLimitMs, int MemoryLimitMb, SandboxInput[] Tests)
 {
     public static readonly string[] Languages = ["Python", "JavaScript", "TypeScript", "C++", "C#", "Go", "Java"];
-    public static bool Valid(SandboxJob job) => job != null && Languages.Contains(job.Language) && job.Code != null && job.Code.Length <= 20000
+    public static bool Valid(SandboxJob job) => 
+        job != null && Languages.Contains(job.Language) && job.Code != null && job.Code.Length <= 20000
         && job.TimeLimitMs is >= 100 and <= 10000 && job.MemoryLimitMb is >= 32 and <= 1024 && job.Tests is { Length: >= 1 and <= 50 }
         && job.Tests.All(test => test != null && test.Input != null && test.Input.Length <= 10000 && test.Position >= 0)
         && job.Tests.Select(test => test.Position).Distinct().Count() == job.Tests.Length;
